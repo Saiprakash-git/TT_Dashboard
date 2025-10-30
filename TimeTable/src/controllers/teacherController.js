@@ -6,7 +6,9 @@ import Preference from "../models/Preference.js";
 // @access  Teacher
 export const getSubjectsForTeacher = async (req, res) => {
   try {
-    const subjects = await Subject.find({ semester: req.user.semester });
+    // Allow optional semester query param so teacher can fetch subjects for a chosen semester
+    const semester = req.query.semester || req.body.semester || req.user.semester;
+    const subjects = await Subject.find({ semester });
     res.json(subjects);
   } catch (error) {
     res.status(500).json({ message: "Server error" });
@@ -17,8 +19,8 @@ export const getSubjectsForTeacher = async (req, res) => {
 // @route   POST /api/teacher/preferences
 // @access  Teacher
 export const submitPreferences = async (req, res) => {
-  const { preferences } = req.body;
-  const semester = req.user.semester;
+  const { preferences, semester: suppliedSemester } = req.body;
+  const semester = suppliedSemester || req.user.semester;
 
   if (!preferences || !Array.isArray(preferences) || preferences.length === 0) {
     return res.status(400).json({ message: "Preferences are required" });
@@ -40,7 +42,7 @@ export const submitPreferences = async (req, res) => {
     }
 
     // Check if preference document already exists
-    let preferenceDoc = await Preference.findOne({ teacherId: req.user._id, semester });
+  let preferenceDoc = await Preference.findOne({ teacherId: req.user._id, semester });
 
     if (preferenceDoc) {
       // Update existing

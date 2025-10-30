@@ -1,45 +1,75 @@
 import React, { useEffect, useState } from "react";
+import axios from "../../api/axiosInstance";
 import Navbar from "../../components/Navbar";
 import Sidebar from "../../components/Sidebar";
-import axios from "../../api/axiosInstance";
 
 const ManageSubjects = () => {
   const [subjects, setSubjects] = useState([]);
   const [name, setName] = useState("");
+  const [code, setCode] = useState("");
+  const [semester, setSemester] = useState("");
+  const [semesters, setSemesters] = useState([]);
+  const [newSemester, setNewSemester] = useState("");
 
   const fetchSubjects = async () => {
     try {
-      const res = await axios.get("/subjects");
+      const res = await axios.get("/admin/subjects", { params: semester ? { semester } : {} });
       setSubjects(res.data);
     } catch (err) {
       console.error(err);
     }
   };
 
+  const fetchSemesters = async () => {
+    try {
+      const res = await axios.get("/admin/semesters");
+      setSemesters(res.data || []);
+      if (!semester && res.data && res.data.length) setSemester(res.data[0]);
+    } catch (err) {
+      console.error("failed to fetch semesters", err);
+    }
+  };
+
   useEffect(() => {
+    fetchSemesters();
     fetchSubjects();
   }, []);
 
   const handleAdd = async () => {
-    if (!name) return alert("Enter subject name");
+    if (!name || !code || !semester) return alert("Enter name, code and semester");
     try {
-      const res = await axios.post("/subjects", { name });
+      const res = await axios.post("/admin/subjects", { name, code, semester });
       setSubjects([...subjects, res.data]);
-      setName("");
+      setName(""); setCode("");
     } catch (err) {
       console.error(err);
+      alert(err?.response?.data?.message || "Failed to add subject");
     }
   };
 
   const handleDelete = async (id) => {
     if (!window.confirm("Are you sure?")) return;
     try {
-      await axios.delete(`/subjects/${id}`);
+      await axios.delete(`/admin/subjects/${id}`);
       setSubjects(subjects.filter((s) => s._id !== id));
     } catch (err) {
       console.error(err);
     }
   };
+
+  const handleAddSemester = async () => {
+    if (!newSemester) return alert("Enter semester number");
+    try {
+      const num = Number(newSemester);
+      await axios.post('/admin/semesters', { number: num });
+      setNewSemester('');
+      fetchSemesters();
+      alert('Semester added');
+    } catch (err) {
+      console.error(err);
+      alert(err?.response?.data?.message || 'Failed to add semester');
+    }
+  }
 
   return (
     <div className="flex">
@@ -50,7 +80,7 @@ const ManageSubjects = () => {
           <h1 className="text-3xl font-bold mb-6">Manage Subjects</h1>
 
           {/* Add Subject Form */}
-          <div className="flex gap-4 mb-6 flex-wrap">
+          <div className="flex gap-4 mb-6 flex-wrap items-center">
             <input
               type="text"
               placeholder="Subject Name"
@@ -58,12 +88,30 @@ const ManageSubjects = () => {
               onChange={(e) => setName(e.target.value)}
               className="p-3 border rounded flex-1"
             />
+            <input
+              type="text"
+              placeholder="Subject Code"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              className="p-3 border rounded w-48"
+            />
+            <select value={semester} onChange={(e) => setSemester(e.target.value)} className="p-2 border rounded w-40">
+              <option value="">Select semester</option>
+              {semesters.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
             <button
               onClick={handleAdd}
               className="bg-blue-600 text-white px-6 py-3 rounded hover:bg-blue-700 transition"
             >
               Add Subject
             </button>
+          </div>
+
+          <div className="flex gap-2 items-center mb-6">
+            <input type="number" placeholder="New semester" value={newSemester} onChange={(e) => setNewSemester(e.target.value)} className="p-2 border rounded w-40" />
+            <button onClick={handleAddSemester} className="bg-indigo-600 text-white px-4 py-2 rounded">Add Semester</button>
           </div>
 
           {/* Subjects Table */}
@@ -79,6 +127,8 @@ const ManageSubjects = () => {
                 {subjects.map((subject) => (
                   <tr key={subject._id} className="hover:bg-gray-100">
                     <td className="p-4 border">{subject.name}</td>
+                    <td className="p-4 border">{subject.code}</td>
+                    <td className="p-4 border">{subject.semester}</td>
                     <td className="p-4 border">
                       <button
                         onClick={() => handleDelete(subject._id)}

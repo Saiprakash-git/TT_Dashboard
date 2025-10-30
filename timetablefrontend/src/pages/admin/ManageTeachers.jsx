@@ -7,10 +7,12 @@ const ManageTeachers = () => {
   const [teachers, setTeachers] = useState([]);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [semester, setSemester] = useState(1);
 
   const fetchTeachers = async () => {
     try {
-      const res = await axios.get("/teachers");
+      const res = await axios.get("/admin/teachers");
       setTeachers(res.data);
     } catch (err) {
       console.error(err);
@@ -24,10 +26,15 @@ const ManageTeachers = () => {
   const handleAdd = async () => {
     if (!name || !email) return alert("Fill all fields");
     try {
-      const res = await axios.post("/teachers", { name, email });
+      const payload = { name, email };
+      if (password) payload.password = password;
+      if (semester) payload.semester = semester;
+      const res = await axios.post("/admin/teachers", payload);
       setTeachers([...teachers, res.data]);
       setName("");
       setEmail("");
+      setPassword("");
+      setSemester(1);
     } catch (err) {
       console.error(err);
     }
@@ -36,10 +43,11 @@ const ManageTeachers = () => {
   const handleDelete = async (id) => {
     if (!window.confirm("Are you sure?")) return;
     try {
-      await axios.delete(`/teachers/${id}`);
+      await axios.delete(`/admin/teachers/${id}`);
       setTeachers(teachers.filter((t) => t._id !== id));
     } catch (err) {
       console.error(err);
+      alert(err?.response?.data?.message || "Failed to delete teacher");
     }
   };
 
@@ -66,6 +74,21 @@ const ManageTeachers = () => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="p-3 border rounded flex-1"
+            />
+            <input
+              type="password"
+              placeholder="Password (optional)"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="p-3 border rounded flex-1"
+            />
+            <input
+              type="number"
+              min="1"
+              placeholder="Semester"
+              value={semester}
+              onChange={(e) => setSemester(Number(e.target.value))}
+              className="p-3 border rounded w-28"
             />
             <button
               onClick={handleAdd}

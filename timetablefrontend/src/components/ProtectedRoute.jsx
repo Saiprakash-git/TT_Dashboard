@@ -1,6 +1,6 @@
-import React from "react";
+import React, { useContext } from "react";
 import { Navigate } from "react-router-dom";
-import { useAuth } from "../context/AuthContext"; // Assuming you have AuthContext
+import { AuthContext } from "../context/AuthContext";
 
 /**
  * ProtectedRoute component
@@ -8,19 +8,19 @@ import { useAuth } from "../context/AuthContext"; // Assuming you have AuthConte
  * @param {string|string[]} role - Role(s) allowed to access this route
  */
 const ProtectedRoute = ({ children, role }) => {
-  const { user } = useAuth(); // user object should contain role info
+  const { user } = useContext(AuthContext);
 
   // If not logged in, redirect to login
   if (!user) {
-    return <Navigate to="/" />;
+    return <Navigate to="/" replace />;
   }
 
-  // Convert role to array for uniformity
-  const allowedRoles = Array.isArray(role) ? role : [role];
-
-  // If user role not allowed, redirect to their dashboard
-  if (!allowedRoles.includes(user.role)) {
-    return <Navigate to={user.role === "admin" ? "/admin" : "/teacher"} />;
+  // If role is provided, check it; otherwise allow any authenticated user
+  if (role) {
+    const allowedRoles = Array.isArray(role) ? role : [role];
+    if (!allowedRoles.includes(user.role)) {
+      return <Navigate to={user.role === "admin" ? "/admin" : "/teacher"} replace />;
+    }
   }
 
   return children;

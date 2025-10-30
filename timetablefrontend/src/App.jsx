@@ -4,7 +4,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 
 // Auth pages
 import Login from "./pages/Login";
-import Register from "./pages/Register";
+import Register from "./pages/RegisterAdmin";
 
 // Admin pages
 import AdminDashboard from "./pages/admin/AdminDashboard";
