@@ -1,5 +1,7 @@
 import express from "express";
 import { registerTeacher, addSubject, getSubjects, getPreferencesPerSubject, deleteSubject, getTeachers, addTeacher, deleteTeacher, getSemesters, addSemester } from "../controllers/adminController.js";
+import { getDeadlines, upsertDeadline, deleteDeadline } from "../controllers/adminController.js";
+import { runAllocation, listAllocations, updateAllocation, exportAllocations } from "../controllers/allocationController.js";
 import { protect, adminOnly } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
@@ -38,6 +40,21 @@ router.post("/teachers", addTeacher);
 
 // DELETE /api/admin/teachers/:id
 router.delete("/teachers/:id", deleteTeacher);
+
+// Deadlines
+router.get("/deadlines", getDeadlines);
+router.post("/deadlines", upsertDeadline);
+router.delete("/deadlines/:semester", deleteDeadline);
+
+// Allocations
+// POST /api/admin/allocations/run  { semester }
+router.post("/allocations/run", runAllocation);
+// GET /api/admin/allocations?semester= - list
+router.get("/allocations", listAllocations);
+// PATCH /api/admin/allocations/:id - manual update
+router.patch("/allocations/:id", updateAllocation);
+// CSV export
+router.get("/allocations/export", exportAllocations);
 
 
 export default router;

@@ -1,6 +1,7 @@
 import User from "../models/User.js";
 import generateToken from "../utils/generateToken.js";
 import bcrypt from "bcryptjs";
+import { protect } from "../middleware/authMiddleware.js";
 
 // @desc    Login user/admin
 // @route   POST /api/auth/login
@@ -100,5 +101,55 @@ export const registerAdmin = async (req, res) => {
   } catch (error) {
     console.error("Register error:", error);
     res.status(500).json({ message: "Server error" });
+  }
+};
+
+// GET /api/auth/profile  (protected)
+export const getProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select('-password').lean();
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    return res.json(user);
+  } catch (err) {
+    console.error('getProfile', err);
+    return res.status(500).json({ message: 'server_error' });
+  }
+};
+
+// PATCH /api/auth/profile  (protected)
+export const updateProfile = async (req, res) => {
+  try {
+    const { name, email, semester } = req.body;
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (name) user.name = name;
+    if (email) user.email = email;
+    if (typeof semester !== 'undefined') user.semester = semester;
+    await user.save();
+    const u = user.toObject(); delete u.password;
+    return res.json(u);
+  } catch (err) {
+    console.error('updateProfile', err);
+    return res.status(500).json({ message: 'server_error' });
+  }
+};
+
+// PATCH /api/auth/change-password  (protected)
+export const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) return res.status(400).json({ message: 'currentPassword and newPassword required' });
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    const ok = await user.matchPassword(currentPassword);
+    if (!ok) return res.status(401).json({ message: 'Current password incorrect' });
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+    user.passwordSet = true;
+    await user.save();
+    return res.json({ message: 'password_changed' });
+  } catch (err) {
+    console.error('changePassword', err);
+    return res.status(500).json({ message: 'server_error' });
   }
 };

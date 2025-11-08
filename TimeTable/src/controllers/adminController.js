@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs";
 
 import Preference from "../models/Preference.js";
 import Semester from "../models/Semester.js";
+import Deadline from "../models/Deadline.js";
 
 import mongoose from "mongoose";
 
@@ -25,12 +26,11 @@ export const registerTeacher = async (req, res) => {
       return res.status(400).json({ message: "Teacher already exists" });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-
+    // Create teacher with plaintext password so User model pre-save hook hashes it once
     const teacher = await User.create({
       name,
       email,
-      password: hashedPassword,
+      password,
       role: "teacher",
       semester,
       createdBy: req.user._id,
@@ -152,6 +152,57 @@ export const addSemester = async (req, res) => {
   }
 };
 
+// @desc    Get list of deadlines
+// @route   GET /api/admin/deadlines
+// @access  Admin
+export const getDeadlines = async (req, res) => {
+  try {
+    const ds = await Deadline.find({}).sort({ semester: 1 }).lean();
+    res.json(ds);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// @desc    Create or update a deadline for semester
+// @route   POST /api/admin/deadlines
+// @access  Admin
+export const upsertDeadline = async (req, res) => {
+  const { semester, opensAt, closesAt, isActive } = req.body;
+  if (semester === undefined || semester === null) return res.status(400).json({ message: "semester required" });
+  try {
+    let d = await Deadline.findOne({ semester });
+    if (d) {
+      if (opensAt !== undefined) d.opensAt = opensAt ? new Date(opensAt) : null;
+      if (closesAt !== undefined) d.closesAt = closesAt ? new Date(closesAt) : null;
+      if (isActive !== undefined) d.isActive = !!isActive;
+      await d.save();
+    } else {
+      d = await Deadline.create({ semester, opensAt: opensAt ? new Date(opensAt) : null, closesAt: closesAt ? new Date(closesAt) : null, isActive: isActive !== undefined ? !!isActive : true, createdBy: req.user._id });
+    }
+    res.json(d);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// @desc    Delete a deadline by semester
+// @route   DELETE /api/admin/deadlines/:semester
+// @access  Admin
+export const deleteDeadline = async (req, res) => {
+  const { semester } = req.params;
+  try {
+    const d = await Deadline.findOneAndDelete({ semester });
+    if (!d) return res.status(404).json({ message: "Deadline not found" });
+    res.json({ message: "Deadline deleted" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
 // @desc    Add a teacher (simple endpoint for ManageTeachers page)
 // @route   POST /api/admin/teachers
 // @access  Admin
@@ -174,8 +225,8 @@ export const addTeacher = async (req, res) => {
     };
 
     if (password) {
-      const hashedPassword = await bcrypt.hash(password, 10);
-      teacherData.password = hashedPassword;
+      // leave password plaintext; User model will hash on save
+      teacherData.password = password;
       teacherData.passwordSet = true;
     } else {
       // leave password unset; teacher will set on first login
@@ -217,6 +268,7 @@ export const deleteTeacher = async (req, res) => {
 // @access  Admin
 export const getPreferencesPerSubject = async (req, res) => {
   const semester = parseInt(req.params.semester);
+  const topN = parseInt(req.query.top) || 2;
 
   try {
     // Fetch all subjects for the semester
@@ -245,8 +297,8 @@ export const getPreferencesPerSubject = async (req, res) => {
         .filter(Boolean)
         .sort((a, b) => a.rank - b.rank); // sort by rank ascending
 
-      // Take top 2 preferences
-      const topTeachers = subjectPrefs.slice(0, 2);
+  // Take top N preferences
+  const topTeachers = subjectPrefs.slice(0, topN);
 
       return {
         subjectId: subject._id,

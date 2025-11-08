@@ -57,7 +57,7 @@ const TimetableView = () => {
     fetchSemesters();
     fetchTimetable();
     fetchSubjectsAndTeachers(semester);
-  }, [role]);
+  }, [role, semester]);
 
   const handleGenerate = async () => {
     if (!semester) return alert("Please enter semester to generate for");
@@ -147,30 +147,41 @@ const TimetableView = () => {
               </thead>
               <tbody>
                 {Array.isArray(timetable) && timetable.length > 0 ? (
-                  timetable.map((row) => (
-                    <tr key={row.day} className="hover:bg-gray-100">
-                      <td className="p-4 border font-bold">{row.day}</td>
-                      {row.slots.map((slot, i) => (
-                        <td key={i} className="p-4 border text-center">
-                          <div className="text-sm font-medium">{slot.subjectName}</div>
-                          <div className="text-xs text-gray-600">{slot.teacherName}</div>
-                        </td>
-                      ))}
+                  // Distinguish between admin grid rows (have .day and .slots) vs teacher assignment list (have subjectName)
+                  timetable[0].day && Array.isArray(timetable[0].slots) ? (
+                    timetable.map((row) => (
+                      <tr key={row.day} className="hover:bg-gray-100">
+                        <td className="p-4 border font-bold">{row.day}</td>
+                        {row.slots.map((slot, i) => (
+                          <td key={i} className="p-4 border text-center">
+                            <div className="text-sm font-medium">{slot.subjectName}</div>
+                            <div className="text-xs text-gray-600">{slot.teacherName}</div>
+                          </td>
+                        ))}
+                      </tr>
+                    ))
+                  ) : (
+                    // Teacher assignment list
+                    <tr>
+                      <td colSpan={5} className="p-6 text-center text-gray-500">
+                        <div>
+                          <h3 className="text-lg font-semibold">Assigned Subjects</h3>
+                          <ul className="mt-2">
+                            {timetable.map((t, idx) => (
+                              <li key={idx} className="mb-1">{t.subjectName} {t.semester ? `(Semester ${t.semester})` : ''}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </td>
                     </tr>
-                  ))
+                  )
                 ) : (
                   <tr>
                     <td colSpan={5} className="p-6 text-center text-gray-500">
                       {role === "teacher" ? (
                         <div>
                           <h3 className="text-lg font-semibold">Assigned Subjects</h3>
-                          {timetable.length === 0 ? <div className="text-sm text-gray-500 mt-2">No assignments yet</div> : (
-                            <ul className="mt-2">
-                              {timetable.map((t, idx) => (
-                                <li key={idx} className="mb-1">{t.subjectName} (Semester {t.semester})</li>
-                              ))}
-                            </ul>
-                          )}
+                          <div className="text-sm text-gray-500 mt-2">No assignments yet</div>
                         </div>
                       ) : (
                         "No timetable available. Admin can generate one."

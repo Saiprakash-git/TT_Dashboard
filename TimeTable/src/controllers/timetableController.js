@@ -2,6 +2,8 @@ import Timetable from "../models/Timetable.js";
 import Subject from "../models/Subject.js";
 import Preference from "../models/Preference.js";
 import User from "../models/User.js";
+import Allocation from "../models/Allocation.js";
+import { runGreedyAllocation } from "../services/allocationService.js";
 
 // Helper: format assignments into grid rows (Mon-Fri, 4 periods)
 const buildGrid = (assignments) => {
@@ -29,47 +31,55 @@ export const generateTimetable = async (req, res) => {
   if (!semester) return res.status(400).json({ message: "semester required" });
 
   try {
-    // Get subjects for semester
-    const subjects = await Subject.find({ semester });
-
-    // For each subject, pick top preferred teacher from Preference collection
-    const assignments = [];
-
-    for (const subject of subjects) {
-      // find all preference docs for semester where subject exists
-      const prefs = await Preference.find({ semester }).populate("teacherId", "name email").lean();
-
-      // build list of teacher ranks for this subject
-      const subjectPrefs = [];
-      prefs.forEach((p) => {
-        const pr = p.preferences.find((prf) => prf.subjectId && prf.subjectId.toString() === subject._id.toString());
-        if (pr) {
-          subjectPrefs.push({ teacherId: p.teacherId?._id, teacherName: p.teacherId?.name, rank: pr.preferenceRank });
-        }
-      });
-
-      // sort by rank asc
-      subjectPrefs.sort((a, b) => a.rank - b.rank);
-
-      // pick top teacher if any, else leave unassigned
-      const chosen = subjectPrefs.length > 0 ? subjectPrefs[0] : null;
-
-      assignments.push({
-        subject: subject._id,
-        subjectName: subject.name,
-        teacher: chosen ? chosen.teacherId : null,
-        teacherName: chosen ? chosen.teacherName : "Unassigned",
-      });
+    // Use allocations as the source of subject -> teacher pairs. If none exist, run allocator.
+    let allocations = await Allocation.find({ semester }).populate('subject').populate('teacher').lean();
+    if (!allocations || allocations.length === 0) {
+      await runGreedyAllocation(semester, req.user ? req.user._id : undefined);
+      allocations = await Allocation.find({ semester }).populate('subject').populate('teacher').lean();
     }
 
-    // Save into Timetable doc with simple day/period placement
-    const timetableAssignments = assignments.map((a, i) => ({ subject: a.subject, teacher: a.teacher, day: null, period: null }));
+    // Build a flat list of assignments from allocations
+    const assignments = allocations.map(a => ({ subject: a.subject?._id, subjectName: a.subject?.name || '', teacher: a.teacher || null, teacherName: a.teacherName || (a.teacher?.name || '') }));
 
+    // Create timetable slots (Mon-Fri, 4 periods -> 20 slots)
+    const days = ["Mon","Tue","Wed","Thu","Fri"];
+    const periodsPerDay = 4;
+    const totalSlots = days.length * periodsPerDay;
+
+    const slots = Array(totalSlots).fill(null);
+
+    // Try to place each assignment into first available slot
+    for (const a of assignments) {
+      let placed = false;
+      for (let i = 0; i < totalSlots; i++) {
+        if (!slots[i]) {
+          slots[i] = a;
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) {
+        // no free slot; leave unassigned (skip)
+      }
+    }
+
+    // Convert slots into timetable assignments with day and period
+    const timetableAssignments = [];
+    for (let i = 0; i < slots.length; i++) {
+      const s = slots[i];
+      const dayIndex = Math.floor(i / periodsPerDay);
+      const periodIndex = i % periodsPerDay;
+      if (s) {
+        timetableAssignments.push({ subject: s.subject, teacher: s.teacher, day: days[dayIndex], period: periodIndex + 1 });
+      } else {
+        timetableAssignments.push({ subject: null, teacher: null, day: days[dayIndex], period: periodIndex + 1 });
+      }
+    }
+
+    // Save timetable (replace existing latest for semester)
     const tt = await Timetable.create({ semester, assignments: timetableAssignments });
 
-    // Populate subject and teacher names for response
-    const populated = assignments;
-    const rows = buildGrid(populated);
+    const rows = buildGrid(timetableAssignments.map(a => ({ subjectName: a.subject ? (a.subject.name || a.subjectName) : '', teacherName: a.teacher ? (a.teacher.name || a.teacherName) : '' })));
 
     res.json({ timetableId: tt._id, semester, rows, generatedAt: tt.generatedAt });
   } catch (error) {

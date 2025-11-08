@@ -10,6 +10,8 @@ const userSchema = new mongoose.Schema({
   passwordSet: { type: Boolean, default: true },
   role: { type: String, enum: ["admin", "teacher"], default: "teacher" },
   semester: { type: Number },
+  // maximum assignments this teacher can receive during allocation
+  capacity: { type: Number, default: 1 },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
 }, { timestamps: true });
 

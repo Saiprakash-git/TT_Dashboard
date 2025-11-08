@@ -13,10 +13,14 @@ import ManageSubjects from "./pages/admin/ManageSubjects";
 import AddSubject from "./pages/admin/AddSubject";
 import RegisterTeacher from "./pages/admin/RegisterTeacher";
 import ViewPreferences from "./pages/admin/ViewPreferences";
+import ManageDeadlines from "./pages/admin/ManageDeadlines";
+import AllocateSubjects from "./pages/admin/AllocateSubjects";
 
 // Teacher pages
 import TeacherDashboard from "./pages/teacher/TeacherDashboard";
 import SubmitPreferences from "./pages/teacher/SubmitPreferences";
+import MyPreferences from "./pages/teacher/MyPreferences";
+import Profile from "./pages/teacher/Profile";
 
 // Timetable
 import TimetableView from "./pages/TimetableView";
@@ -78,6 +82,22 @@ const App = () => {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/admin/manage-deadlines"
+          element={
+            <ProtectedRoute role="admin">
+              <ManageDeadlines />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/allocate"
+          element={
+            <ProtectedRoute role="admin">
+              <AllocateSubjects />
+            </ProtectedRoute>
+          }
+        />
 
         {/* Teacher Routes */}
         <Route
@@ -93,6 +113,22 @@ const App = () => {
           element={
             <ProtectedRoute role="teacher">
               <SubmitPreferences />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/teacher/my-preferences"
+          element={
+            <ProtectedRoute role="teacher">
+              <MyPreferences />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/teacher/profile"
+          element={
+            <ProtectedRoute role="teacher">
+              <Profile />
             </ProtectedRoute>
           }
         />

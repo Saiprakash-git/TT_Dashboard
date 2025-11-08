@@ -4,13 +4,14 @@ import axios from "../../api/axiosInstance";
 
 export default function ViewPreferences() {
   const [semester, setSemester] = useState(1);
+  const [topN, setTopN] = useState(2);
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const fetchPrefs = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`/admin/preferences/${semester}`);
+      const res = await axios.get(`/admin/preferences/${semester}`, { params: { top: topN } });
       setData(res.data);
     } catch (err) {
       console.error(err);
@@ -25,6 +26,8 @@ export default function ViewPreferences() {
       <div className="flex items-center gap-3 mb-4">
         <h3 className="text-lg font-semibold text-primary">Preferences (Top 2)</h3>
         <div className="ml-auto flex items-center gap-2">
+          <label className="text-sm text-slate-600">Top</label>
+          <input type="number" min="1" value={topN} onChange={e=>setTopN(Number(e.target.value))} className="p-1 border rounded w-16"/>
           <input type="number" min="1" value={semester} onChange={e=>setSemester(Number(e.target.value))} className="p-1 border rounded w-20"/>
           <button className="bg-primary text-white px-3 py-1 rounded" onClick={fetchPrefs}>Load</button>
         </div>

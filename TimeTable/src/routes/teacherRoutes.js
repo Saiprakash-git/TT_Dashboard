@@ -1,6 +1,8 @@
 import express from "express";
-import { getSubjectsForTeacher, submitPreferences } from "../controllers/teacherController.js";
+import { getSubjectsForTeacher, submitPreferences, getMyPreferences } from "../controllers/teacherController.js";
+import Deadline from "../models/Deadline.js";
 import { protect, teacherOnly } from "../middleware/authMiddleware.js";
+import { getTeacherAllocations } from "../controllers/allocationController.js";
 
 const router = express.Router();
 
@@ -9,6 +11,19 @@ router.use(protect, teacherOnly);
 
 // GET /api/teacher/subjects
 router.get("/subjects", getSubjectsForTeacher);
+
+// GET /api/teacher/deadline?semester=1
+router.get("/deadline", async (req, res) => {
+	const semester = req.query.semester || req.body.semester || req.user.semester;
+	try {
+		const d = await Deadline.findOne({ semester }).lean();
+		if (!d) return res.json({ exists: false });
+		return res.json({ exists: true, opensAt: d.opensAt, closesAt: d.closesAt, isActive: d.isActive });
+	} catch (err) {
+		console.error(err);
+		res.status(500).json({ message: "Server error" });
+	}
+});
 
 // GET /api/teacher/semesters
 router.get("/semesters", (req, res, next) => {
@@ -27,5 +42,11 @@ router.get("/semesters", (req, res, next) => {
 
 // POST /api/teacher/preferences
 router.post("/preferences", submitPreferences);
+
+// GET /api/teacher/preferences?semester= - get current teacher's preferences
+router.get("/preferences", getMyPreferences);
+
+// GET /api/teacher/allocations?semester=
+router.get("/allocations", getTeacherAllocations);
 
 export default router;
