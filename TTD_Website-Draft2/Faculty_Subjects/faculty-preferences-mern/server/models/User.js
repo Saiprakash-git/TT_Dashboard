@@ -39,6 +39,21 @@ const userSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    facultyId: {
+      type: String,
+      unique: true,
+      sparse: true,
+      trim: true,
+      uppercase: true,
+    },
+    canEditPreferences: {
+      type: Boolean,
+      default: false,
+    },
+    isFirstLogin: {
+      type: Boolean,
+      default: true,
+    },
   },
   {
     timestamps: true,

@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
+import { Toaster } from './components/ui/sonner';
 
 // Pages
 import AuthPage from './pages/AuthPage';
@@ -11,11 +12,13 @@ import PreferencesPage from './pages/PreferencesPage';
 import AdminSubjectsPage from './pages/admin/AdminSubjectsPage';
 import AdminTeachersPage from './pages/admin/AdminTeachersPage';
 import AdminPreferencesPage from './pages/admin/AdminPreferencesPage';
+import AllocateSubjectsPage from './pages/admin/AllocateSubjectsPage';
 
 function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <Toaster />
         <Routes>
           <Route path="/login" element={<AuthPage />} />
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -80,6 +83,15 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['admin']}>
                 <AdminPreferencesPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/admin/allocate"
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <AllocateSubjectsPage />
               </ProtectedRoute>
             }
           />

@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Filter, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 export default function AdminPreferencesPage() {
   const { teachers } = useTeachers();
@@ -17,6 +18,7 @@ export default function AdminPreferencesPage() {
   const [selectedTeacher, setSelectedTeacher] = useState<string>('all');
   const [selectedSubject, setSelectedSubject] = useState<string>('all');
   const [topN, setTopN] = useState<string>('all');
+  const [customTopN, setCustomTopN] = useState<string>('');
 
   const teachersWithPrefs = teachers.filter(t => t.preference);
 
@@ -52,10 +54,15 @@ export default function AdminPreferencesPage() {
       results = results.filter(r => r.subjectId === selectedSubject);
     }
 
-    // Apply top N filter
-    if (topN !== 'all') {
-      const n = parseInt(topN);
-      results = results.filter(r => r.rank <= n);
+    // Apply top N filter (use custom if provided, otherwise use preset)
+    let nValue: number | null = null;
+    if (customTopN && !isNaN(parseInt(customTopN))) {
+      nValue = parseInt(customTopN);
+    } else if (topN !== 'all') {
+      nValue = parseInt(topN);
+    }
+    if (nValue && nValue > 0) {
+      results = results.filter(r => r.rank <= nValue);
     }
 
     // Sort by teacher name, then by rank
@@ -67,7 +74,7 @@ export default function AdminPreferencesPage() {
     });
 
     return results;
-  }, [teachersWithPrefs, subjects, selectedTeacher, selectedSubject, topN]);
+  }, [teachersWithPrefs, subjects, selectedTeacher, selectedSubject, topN, customTopN]);
 
   // Get unique subjects that appear in preferences for the subject filter
   const subjectsInPreferences = useMemo(() => {
@@ -82,9 +89,10 @@ export default function AdminPreferencesPage() {
     setSelectedTeacher('all');
     setSelectedSubject('all');
     setTopN('all');
+    setCustomTopN('');
   };
 
-  const hasActiveFilters = selectedTeacher !== 'all' || selectedSubject !== 'all' || topN !== 'all';
+  const hasActiveFilters = selectedTeacher !== 'all' || selectedSubject !== 'all' || topN !== 'all' || customTopN !== '';
 
   return (
     <DashboardLayout>
@@ -162,6 +170,25 @@ export default function AdminPreferencesPage() {
                     <SelectItem value="10">Top 10</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              {/* Custom Top N Input */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Custom Top N</label>
+                <Input
+                  type="number"
+                  min="1"
+                  placeholder="Enter custom number..."
+                  value={customTopN}
+                  onChange={(e) => {
+                    setCustomTopN(e.target.value);
+                    if (e.target.value) setTopN('all'); // Clear preset when custom is used
+                  }}
+                  className="w-full"
+                />
+                {customTopN && !isNaN(parseInt(customTopN)) && (
+                  <p className="text-xs text-muted-foreground">Showing top {customTopN} preferences</p>
+                )}
               </div>
             </div>
           </CardContent>

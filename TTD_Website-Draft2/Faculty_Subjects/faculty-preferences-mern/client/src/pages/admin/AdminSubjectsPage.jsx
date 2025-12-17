@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import Layout from '../../components/Layout';
+import { DashboardLayout } from '../../components/DashboardLayout';
 import api from '../../utils/api';
 
 const AdminSubjectsPage = () => {
@@ -14,6 +14,8 @@ const AdminSubjectsPage = () => {
     description: '',
     credits: 3,
     semester: '',
+    program: 'B.E/B.Tech',
+    professionalElective: false,
   });
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -65,6 +67,8 @@ const AdminSubjectsPage = () => {
       description: subject.description || '',
       credits: subject.credits,
       semester: subject.semester || '',
+      program: subject.program || 'B.E/B.Tech',
+      professionalElective: Boolean(subject.professionalElective),
     });
     setShowModal(true);
   };
@@ -90,20 +94,22 @@ const AdminSubjectsPage = () => {
       description: '',
       credits: 3,
       semester: '',
+      program: 'B.E/B.Tech',
+      professionalElective: false,
     });
     setError('');
   };
 
   if (loading) {
     return (
-      <Layout>
+      <DashboardLayout>
         <div className="loading">Loading subjects...</div>
-      </Layout>
+      </DashboardLayout>
     );
   }
 
   return (
-    <Layout>
+    <DashboardLayout>
       <div className="container subjects-container">
         <div className="page-header">
           <div>
@@ -146,8 +152,10 @@ const AdminSubjectsPage = () => {
                     <tr>
                       <th>Code</th>
                       <th>Name</th>
+                      <th>Program</th>
                       <th>Credits</th>
                       <th>Semester</th>
+                      <th>Type</th>
                       <th>Description</th>
                       <th>Actions</th>
                     </tr>
@@ -159,8 +167,20 @@ const AdminSubjectsPage = () => {
                           <strong>{subject.code}</strong>
                         </td>
                         <td className="name-cell">{subject.name}</td>
+                        <td className="program-cell">
+                          <span className={`program-badge ${subject.program === 'B.E/B.Tech' ? 'badge-blue' : 'badge-purple'}`}>
+                            {subject.program}
+                          </span>
+                        </td>
                         <td className="credits-cell">{subject.credits}</td>
                         <td className="semester-cell">{subject.semester || '-'}</td>
+                        <td className="program-cell">
+                          {subject.professionalElective ? (
+                            <span className="program-badge badge-green">Professional Elective</span>
+                          ) : (
+                            <span className="program-badge badge-gray">Core</span>
+                          )}
+                        </td>
                         <td className="description-cell">
                           {subject.description || '-'}
                         </td>
@@ -263,6 +283,35 @@ const AdminSubjectsPage = () => {
                       }
                       placeholder="Fall 2024"
                     />
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="program">Program *</label>
+                  <select
+                    id="program"
+                    className="form-control"
+                    value={formData.program}
+                    onChange={(e) =>
+                      setFormData({ ...formData, program: e.target.value })
+                    }
+                    required
+                  >
+                    <option value="B.E/B.Tech">B.E/B.Tech</option>
+                    <option value="M.Tech">M.Tech</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="professionalElective">Professional Elective</label>
+                  <div className="toggle-row">
+                    <input
+                      id="professionalElective"
+                      type="checkbox"
+                      checked={formData.professionalElective}
+                      onChange={(e) => setFormData({ ...formData, professionalElective: e.target.checked })}
+                    />
+                    <span className="toggle-help">Enable to mark this subject as a Professional Elective</span>
                   </div>
                 </div>
 
@@ -626,6 +675,37 @@ const AdminSubjectsPage = () => {
             border: 1px solid #f5c6cb;
           }
 
+          .program-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+          }
+
+          .badge-blue {
+            background: #e3f2fd;
+            color: #1976d2;
+          }
+
+          .badge-purple {
+            background: #f3e5f5;
+            color: #7b1fa2;
+          }
+
+          .badge-green {
+            background: #e8f5e9;
+            color: #388e3c;
+          }
+
+          .badge-gray {
+            background: #f1f3f5;
+            color: #495057;
+          }
+
+          .toggle-row { display:flex; align-items:center; gap:10px; }
+          .toggle-help { color:#7f8c8d; font-size:12px; }
+
           @media (max-width: 768px) {
             .page-header {
               flex-direction: column;
@@ -654,7 +734,7 @@ const AdminSubjectsPage = () => {
           }
         `}</style>
       </div>
-    </Layout>
+    </DashboardLayout>
   );
 };
 

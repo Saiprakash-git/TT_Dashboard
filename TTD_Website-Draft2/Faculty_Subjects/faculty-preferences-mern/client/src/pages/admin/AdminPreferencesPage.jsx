@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import Layout from '../../components/Layout';
+import { DashboardLayout } from '../../components/DashboardLayout';
 import api from '../../utils/api';
 
 const AdminPreferencesPage = () => {
@@ -13,6 +13,7 @@ const AdminPreferencesPage = () => {
   const [selectedTeacher, setSelectedTeacher] = useState('all');
   const [selectedSubject, setSelectedSubject] = useState('all');
   const [topN, setTopN] = useState('all');
+  const [customTopN, setCustomTopN] = useState('');
 
   useEffect(() => {
     fetchData();
@@ -42,8 +43,9 @@ const AdminPreferencesPage = () => {
   const subjectsInPreferences = useMemo(() => {
     const subjectIds = new Set();
     allPreferences.forEach(pref => {
-      pref.subjects?.forEach(subject => {
-        subjectIds.add(subject._id);
+      pref.preferences?.forEach((p) => {
+        const subjectId = typeof p.subject === 'string' ? p.subject : p.subject?._id;
+        if (subjectId) subjectIds.add(subjectId);
       });
     });
     return allSubjects.filter(s => subjectIds.has(s._id));
@@ -53,19 +55,22 @@ const AdminPreferencesPage = () => {
   const filteredPreferences = useMemo(() => {
     const results = [];
 
-    // Flatten preferences - each subject gets a rank (1 = first choice, 2 = second choice, etc.)
+    // Flatten preferences - each preference item carries rank and program
     allPreferences.forEach(preference => {
-      preference.subjects?.forEach((subject, index) => {
+      preference.preferences?.forEach((p, index) => {
+        const subjectObj = p.subject;
+        const subjectId = typeof subjectObj === 'string' ? subjectObj : subjectObj?._id;
         results.push({
           preferencId: preference._id,
           teacherId: preference.teacher?._id,
           teacherName: preference.teacher?.fullName || 'Unknown',
           teacherEmail: preference.teacher?.email,
-          subjectId: subject._id,
-          subjectName: subject.name,
-          subjectCode: subject.code,
-          rank: index + 1,
-          submittedAt: preference.submittedAt,
+          subjectId,
+          subjectName: subjectObj?.name || 'Unknown',
+          subjectCode: subjectObj?.code || '',
+          rank: p.rank || index + 1,
+          program: p.program,
+          submittedAt: preference.submittedAt || preference.updatedAt || preference.createdAt,
         });
       });
     });
@@ -86,6 +91,14 @@ const AdminPreferencesPage = () => {
       results.splice(0, results.length, ...results.filter(r => r.rank <= n));
     }
 
+    // Apply custom top N filter
+    if (customTopN) {
+      const n = parseInt(customTopN);
+      if (!isNaN(n) && n > 0) {
+        results.splice(0, results.length, ...results.filter(r => r.rank <= n));
+      }
+    }
+
     // Sort by RANK first (most important preferences shown first), then by teacher name
     results.sort((a, b) => {
       if (a.rank !== b.rank) {
@@ -95,15 +108,16 @@ const AdminPreferencesPage = () => {
     });
 
     return results;
-  }, [allPreferences, selectedTeacher, selectedSubject, topN]);
+  }, [allPreferences, selectedTeacher, selectedSubject, topN, customTopN]);
 
   const clearFilters = () => {
     setSelectedTeacher('all');
     setSelectedSubject('all');
     setTopN('all');
+    setCustomTopN('');
   };
 
-  const hasActiveFilters = selectedTeacher !== 'all' || selectedSubject !== 'all' || topN !== 'all';
+  const hasActiveFilters = selectedTeacher !== 'all' || selectedSubject !== 'all' || topN !== 'all' || customTopN !== '';
 
   const viewDetails = (preference) => {
     // Find the original preference object for modal display
@@ -117,14 +131,14 @@ const AdminPreferencesPage = () => {
 
   if (loading) {
     return (
-      <Layout>
+      <DashboardLayout>
         <div className="loading">Loading preferences data...</div>
-      </Layout>
+      </DashboardLayout>
     );
   }
 
   return (
-    <Layout>
+    <DashboardLayout>
       <div className="container preferences-admin-container">
         <div className="page-header">
           <h1>📊 Preferences Analytics</h1>
@@ -199,7 +213,26 @@ const AdminPreferencesPage = () => {
                   <option value="3">Top 3</option>
                   <option value="5">Top 5</option>
                   <option value="10">Top 10</option>
+                  <option value="custom">Custom</option>
                 </select>
+              </div>
+
+              {/* Custom Top N Filter */}
+              <div className="filter-group">
+                <label htmlFor="custom-topn-input" className="filter-label">Custom Top N</label>
+                <input
+                  id="custom-topn-input"
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={customTopN}
+                  onChange={(e) => setCustomTopN(e.target.value)}
+                  placeholder="Enter custom number"
+                  className="filter-input"
+                />
+                {customTopN && (
+                  <span className="custom-value-hint">Top {customTopN} preferences</span>
+                )}
               </div>
             </div>
           </div>
@@ -402,6 +435,37 @@ const AdminPreferencesPage = () => {
             outline: none;
             border-color: #4f46e5;
             box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+          }
+
+          .filter-input {
+            padding: 10px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            font-size: 14px;
+            background: white;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: #334155;
+            font-weight: 500;
+          }
+
+          .filter-input:hover {
+            border-color: #4f46e5;
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+          }
+
+          .filter-input:focus {
+            outline: none;
+            border-color: #4f46e5;
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+          }
+
+          .custom-value-hint {
+            display: block;
+            font-size: 12px;
+            color: #4f46e5;
+            margin-top: 6px;
+            font-weight: 500;
           }
 
           .results-card {
@@ -783,7 +847,7 @@ const AdminPreferencesPage = () => {
           }
         `}</style>
       </div>
-    </Layout>
+    </DashboardLayout>
   );
 };
 

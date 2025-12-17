@@ -1,446 +1,201 @@
-import { useState, useEffect } from 'react';
-import Layout from '../components/Layout';
+import { useEffect, useState } from 'react';
+import { DashboardLayout } from '../components/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
+import { Button } from '../components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+import { toast } from 'sonner';
 import api from '../utils/api';
 
-const PreferencesPage = () => {
+export default function PreferencesPage() {
   const { user } = useAuth();
-  const [allSubjects, setAllSubjects] = useState([]);
-  const [rankedSubjects, setRankedSubjects] = useState([]);
+  const [subjects, setSubjects] = useState([]);
+  const [beTechPrefs, setBeTechPrefs] = useState(['', '', '']);
+  const [mTechPrefs, setMTechPrefs] = useState(['', '', '']);
+  const [pePrefs, setPePrefs] = useState(['', '', '']);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
-  const [draggedItem, setDraggedItem] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [canEdit, setCanEdit] = useState(false);
+  const [hasExisting, setHasExisting] = useState(false);
 
   useEffect(() => {
     fetchData();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   const fetchData = async () => {
     try {
-      const [subjectsRes, preferenceRes] = await Promise.all([
+      const [subjectsRes, preferencesRes, userRes] = await Promise.all([
         api.get('/subjects'),
         api.get('/preferences/my/preference'),
+        api.get('/auth/me'),
       ]);
 
-      setAllSubjects(subjectsRes.data.data);
+      const allSubjects = subjectsRes.data.data || [];
+      setSubjects(allSubjects);
+      setCanEdit(Boolean(userRes.data?.data?.canEditPreferences));
 
-      if (preferenceRes.data.data) {
-        // Load previously ranked subjects in order
-        const savedSubjects = preferenceRes.data.data.subjects;
-        setRankedSubjects(savedSubjects);
+      const pref = preferencesRes.data?.data;
+      if (pref?.preferences?.length) {
+        setHasExisting(true);
+        const be = ['', '', ''];
+        const m = ['', '', ''];
+        const pe = ['', '', ''];
+
+        pref.preferences.forEach((p) => {
+          const subjectId = typeof p.subject === 'string' ? p.subject : p.subject?._id;
+          if (p.program === 'B.E/B.Tech' && p.rank >= 1 && p.rank <= 3) {
+            be[p.rank - 1] = subjectId;
+          }
+          if (p.program === 'M.Tech' && p.rank >= 1 && p.rank <= 3) {
+            m[p.rank - 1] = subjectId;
+          }
+          if (p.program === 'Professional Elective' && p.rank >= 1 && p.rank <= 3) {
+            pe[p.rank - 1] = subjectId;
+          }
+        });
+
+        setBeTechPrefs(be);
+        setMTechPrefs(m);
+        setPePrefs(pe);
+      }
+      if (!pref?.preferences?.length) {
+        setHasExisting(false);
       }
     } catch (err) {
-      console.error(err);
-      setError('Failed to load data');
+      console.error('Error loading preferences:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const addSubject = (subject) => {
-    if (!rankedSubjects.find(s => s._id === subject._id)) {
-      setRankedSubjects([...rankedSubjects, subject]);
-    }
-  };
-
-  const removeSubject = (subjectId) => {
-    setRankedSubjects(rankedSubjects.filter(s => s._id !== subjectId));
-  };
-
-  const moveUp = (index) => {
-    if (index > 0) {
-      const newRanked = [...rankedSubjects];
-      [newRanked[index - 1], newRanked[index]] = [newRanked[index], newRanked[index - 1]];
-      setRankedSubjects(newRanked);
-    }
-  };
-
-  const moveDown = (index) => {
-    if (index < rankedSubjects.length - 1) {
-      const newRanked = [...rankedSubjects];
-      [newRanked[index], newRanked[index + 1]] = [newRanked[index + 1], newRanked[index]];
-      setRankedSubjects(newRanked);
-    }
-  };
-
-  const handleDragStart = (e, index) => {
-    setDraggedItem(index);
-    e.dataTransfer.effectAllowed = 'move';
-  };
-
-  const handleDragOver = (e, index) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    
-    if (draggedItem === null || draggedItem === index) return;
-
-    const newRanked = [...rankedSubjects];
-    const draggedSubject = newRanked[draggedItem];
-    newRanked.splice(draggedItem, 1);
-    newRanked.splice(index, 0, draggedSubject);
-    
-    setDraggedItem(index);
-    setRankedSubjects(newRanked);
-  };
-
-  const handleDragEnd = () => {
-    setDraggedItem(null);
+  const filterAvailable = (program, prefs, currentIndex) => {
+    const selected = prefs.filter((id, i) => i !== currentIndex && id);
+    return subjects.filter((s) => {
+      // For Professional Elective section: show only PE subjects regardless of program
+      if (program === 'Professional Elective') {
+        return s.professionalElective === true && !selected.includes(s._id);
+      }
+      // For regular program sections: show only non-PE subjects matching the program
+      return s.program === program && s.professionalElective !== true && !selected.includes(s._id);
+    });
   };
 
   const handleSave = async () => {
-    if (rankedSubjects.length === 0) {
-      setError('Please select at least one subject');
+    if (hasExisting && !canEdit) {
+      toast.error('You do not have permission to edit preferences. Please contact admin.');
       return;
     }
 
-    setMessage('');
-    setError('');
-    setSaving(true);
+    const preferences = [];
+    beTechPrefs.forEach((subjectId, index) => {
+      if (subjectId) {
+        preferences.push({ subject: subjectId, program: 'B.E/B.Tech', rank: index + 1 });
+      }
+    });
+    mTechPrefs.forEach((subjectId, index) => {
+      if (subjectId) {
+        preferences.push({ subject: subjectId, program: 'M.Tech', rank: index + 1 });
+      }
+    });
+    pePrefs.forEach((subjectId, index) => {
+      if (subjectId) {
+        preferences.push({ subject: subjectId, program: 'Professional Elective', rank: index + 1 });
+      }
+    });
 
+    if (preferences.length < 3) {
+      toast.error('Please select at least 3 preferences in total.');
+      return;
+    }
+
+    setIsSaving(true);
     try {
-      const subjectIds = rankedSubjects.map(s => s._id);
-      await api.post('/preferences', { subjects: subjectIds });
-      setMessage('Preferences saved successfully! Your ranking has been recorded.');
+      await api.post('/preferences', { preferences });
+      toast.success('Preferences saved successfully');
+      fetchData();
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to save preferences');
+      console.error(err);
+      toast.error(err.response?.data?.message || 'Failed to save preferences');
     } finally {
-      setSaving(false);
+      setIsSaving(false);
     }
   };
 
+  const programSection = (title, programKey, prefs, setter) => (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>Select up to three ranked preferences</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {[0, 1, 2].map((idx) => (
+          <div key={`${programKey}-${idx}`} className="space-y-2">
+            <label className="text-sm font-medium text-foreground/80">
+              {idx === 0 ? '1st Preference' : idx === 1 ? '2nd Preference' : '3rd Preference'}
+            </label>
+            <select
+              className="w-full border rounded-md px-3 py-2 text-sm"
+              value={prefs[idx]}
+              onChange={(e) => {
+                const next = [...prefs];
+                next[idx] = e.target.value;
+                setter(next);
+              }}
+              disabled={disableEditing}
+            >
+              <option value="">-- Select Subject --</option>
+              {filterAvailable(programKey, prefs, idx).map((subject) => (
+                <option key={subject._id} value={subject._id}>
+                  {subject.code} - {subject.name} ({subject.credits} cr)
+                </option>
+              ))}
+            </select>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+
   if (loading) {
     return (
-      <Layout>
-        <div className="loading">Loading...</div>
-      </Layout>
+      <DashboardLayout>
+        <div className="flex items-center justify-center h-64 text-muted-foreground">
+          Loading preferences...
+        </div>
+      </DashboardLayout>
     );
   }
 
-  const availableSubjects = allSubjects.filter(
-    subject => !rankedSubjects.find(s => s._id === subject._id)
-  );
+  const beTechSubjects = subjects.some((s) => s.program === 'B.E/B.Tech');
+  const mTechSubjects = subjects.some((s) => s.program === 'M.Tech');
+  const peSubjects = subjects.some((s) => s.professionalElective === true);
+  const disableEditing = hasExisting && !canEdit;
 
   return (
-    <Layout>
-      <div className="container">
-        <h1>My Subject Preferences</h1>
-        <p className="subtitle">Rank subjects in order of your preference (1 = Most Preferred)</p>
-
-        {message && <div className="alert alert-success">{message}</div>}
-        {error && <div className="alert alert-error">{error}</div>}
-
-        <div className="preferences-container">
-          {/* Available Subjects */}
-          <div className="card">
-            <h3>Available Subjects</h3>
-            <p className="hint">Click to add to your preferences</p>
-            <div className="available-subjects">
-              {availableSubjects.length === 0 ? (
-                <p className="text-muted">All subjects have been added to your preferences</p>
-              ) : (
-                availableSubjects.map((subject) => (
-                  <div
-                    key={subject._id}
-                    className="subject-card available"
-                    onClick={() => addSubject(subject)}
-                  >
-                    <div className="subject-header">
-                      <strong>{subject.code}</strong>
-                      <span className="add-icon">+</span>
-                    </div>
-                    <div className="subject-name">{subject.name}</div>
-                    <div className="subject-meta">
-                      {subject.credits} credits
-                      {subject.semester && ` • ${subject.semester}`}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
+    <DashboardLayout>
+      <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 className="text-3xl font-bold" style={{fontFamily: 'Poppins, sans-serif', letterSpacing: '-0.02em'}}>Submit Preferences</h1>
+            <p className="text-muted-foreground">Pick up to three per program; minimum three total.</p>
           </div>
+          <Button onClick={handleSave} disabled={isSaving || disableEditing}>
+            {isSaving ? 'Saving...' : 'Save Preferences'}
+          </Button>
+        </div>
 
-          {/* Ranked Preferences */}
-          <div className="card">
-            <h3>Your Ranked Preferences</h3>
-            <p className="hint">Drag to reorder or use arrows. Higher = More Preferred</p>
-            
-            {rankedSubjects.length === 0 ? (
-              <div className="empty-state">
-                <p>No subjects selected yet</p>
-                <p className="text-muted">Add subjects from the left to start ranking</p>
-              </div>
-            ) : (
-              <div className="ranked-list">
-                {rankedSubjects.map((subject, index) => (
-                  <div
-                    key={subject._id}
-                    className="ranked-item"
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, index)}
-                    onDragOver={(e) => handleDragOver(e, index)}
-                    onDragEnd={handleDragEnd}
-                  >
-                    <div className="rank-number">{index + 1}</div>
-                    <div className="subject-content">
-                      <div className="subject-title">
-                        <strong>{subject.code}</strong> - {subject.name}
-                      </div>
-                      <div className="subject-meta">
-                        {subject.credits} credits
-                        {subject.semester && ` • ${subject.semester}`}
-                      </div>
-                    </div>
-                    <div className="rank-controls">
-                      <button
-                        className="control-btn"
-                        onClick={() => moveUp(index)}
-                        disabled={index === 0}
-                        title="Move up"
-                      >
-                        ▲
-                      </button>
-                      <button
-                        className="control-btn"
-                        onClick={() => moveDown(index)}
-                        disabled={index === rankedSubjects.length - 1}
-                        title="Move down"
-                      >
-                        ▼
-                      </button>
-                      <button
-                        className="control-btn remove"
-                        onClick={() => removeSubject(subject._id)}
-                        title="Remove"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="save-section">
-              <div className="preference-count">
-                <strong>{rankedSubjects.length}</strong> subject(s) ranked
-              </div>
-              <button
-                onClick={handleSave}
-                className="btn btn-success"
-                disabled={saving || rankedSubjects.length === 0}
-              >
-                {saving ? 'Saving...' : 'Save Preferences'}
-              </button>
-            </div>
+        {disableEditing && (
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            You cannot edit preferences right now. Please contact the admin to enable editing.
           </div>
+        )}
+
+        <div className="grid gap-4 md:grid-cols-2">
+          {beTechSubjects && programSection('B.E/B.Tech Program', 'B.E/B.Tech', beTechPrefs, setBeTechPrefs)}
+          {mTechSubjects && programSection('M.Tech Program', 'M.Tech', mTechPrefs, setMTechPrefs)}
+          {peSubjects && programSection('Professional Electives', 'Professional Elective', pePrefs, setPePrefs)}
         </div>
       </div>
-
-      <style>{`
-        .subtitle {
-          color: #666;
-          margin-top: -10px;
-          margin-bottom: 20px;
-        }
-
-        .preferences-container {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 20px;
-          margin-top: 20px;
-        }
-
-        .card h3 {
-          margin-bottom: 5px;
-          color: #2c3e50;
-        }
-
-        .hint {
-          font-size: 13px;
-          color: #666;
-          margin-bottom: 15px;
-        }
-
-        .available-subjects {
-          display: grid;
-          grid-template-columns: 1fr;
-          gap: 10px;
-          max-height: 600px;
-          overflow-y: auto;
-        }
-
-        .subject-card {
-          padding: 15px;
-          border: 2px solid #e0e0e0;
-          border-radius: 8px;
-          cursor: pointer;
-          transition: all 0.3s;
-          background: #f9f9f9;
-        }
-
-        .subject-card.available:hover {
-          border-color: #667eea;
-          background: #f0f4ff;
-          transform: translateY(-2px);
-          box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-        }
-
-        .subject-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 8px;
-        }
-
-        .add-icon {
-          font-size: 24px;
-          color: #667eea;
-          font-weight: bold;
-        }
-
-        .subject-name {
-          margin-bottom: 5px;
-          color: #333;
-        }
-
-        .subject-meta {
-          font-size: 12px;
-          color: #666;
-        }
-
-        .ranked-list {
-          max-height: 550px;
-          overflow-y: auto;
-        }
-
-        .ranked-item {
-          display: flex;
-          align-items: center;
-          gap: 15px;
-          padding: 15px;
-          margin-bottom: 10px;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          border-radius: 8px;
-          cursor: move;
-          transition: all 0.3s;
-          color: white;
-        }
-
-        .ranked-item:hover {
-          transform: translateX(5px);
-          box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-        }
-
-        .rank-number {
-          background: rgba(255,255,255,0.3);
-          width: 40px;
-          height: 40px;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 18px;
-          font-weight: bold;
-          flex-shrink: 0;
-        }
-
-        .subject-content {
-          flex: 1;
-        }
-
-        .subject-title {
-          margin-bottom: 4px;
-          font-size: 15px;
-        }
-
-        .subject-title strong {
-          font-size: 16px;
-        }
-
-        .ranked-item .subject-meta {
-          font-size: 12px;
-          opacity: 0.9;
-        }
-
-        .rank-controls {
-          display: flex;
-          gap: 5px;
-          flex-shrink: 0;
-        }
-
-        .control-btn {
-          background: rgba(255,255,255,0.2);
-          border: 1px solid rgba(255,255,255,0.3);
-          color: white;
-          width: 32px;
-          height: 32px;
-          border-radius: 4px;
-          cursor: pointer;
-          font-size: 14px;
-          transition: all 0.2s;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-
-        .control-btn:hover:not(:disabled) {
-          background: rgba(255,255,255,0.3);
-          transform: scale(1.1);
-        }
-
-        .control-btn:disabled {
-          opacity: 0.3;
-          cursor: not-allowed;
-        }
-
-        .control-btn.remove {
-          background: rgba(220, 53, 69, 0.3);
-          border-color: rgba(220, 53, 69, 0.5);
-        }
-
-        .control-btn.remove:hover {
-          background: rgba(220, 53, 69, 0.6);
-        }
-
-        .empty-state {
-          text-align: center;
-          padding: 60px 20px;
-          color: #999;
-        }
-
-        .empty-state p {
-          margin: 10px 0;
-        }
-
-        .save-section {
-          margin-top: 20px;
-          padding-top: 20px;
-          border-top: 2px solid #eee;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-
-        .preference-count {
-          font-size: 16px;
-          color: #666;
-        }
-
-        .text-muted {
-          color: #999;
-          font-size: 14px;
-        }
-
-        @media (max-width: 968px) {
-          .preferences-container {
-            grid-template-columns: 1fr;
-          }
-        }
-      `}</style>
-    </Layout>
+    </DashboardLayout>
   );
-};
-
-export default PreferencesPage;
+}

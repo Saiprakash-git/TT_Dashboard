@@ -59,18 +59,18 @@ export const register = async (req, res, next) => {
 // @access  Public
 export const login = async (req, res, next) => {
   try {
-    const { email, password } = req.body;
+    const { facultyId, password, newPassword } = req.body;
 
-    // Validate email & password
-    if (!email || !password) {
+    // Validate facultyId & password
+    if (!facultyId || !password) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide an email and password',
+        message: 'Please provide faculty ID and password',
       });
     }
 
     // Check for user (include password for comparison)
-    const user = await User.findOne({ email }).select('+password');
+    const user = await User.findOne({ facultyId }).select('+password +isFirstLogin');
 
     if (!user) {
       return res.status(401).json({
@@ -89,12 +89,20 @@ export const login = async (req, res, next) => {
       });
     }
 
+    // If first login and newPassword provided, update password
+    if (user.isFirstLogin && newPassword) {
+      user.password = newPassword;
+      user.isFirstLogin = false;
+      await user.save();
+    }
+
     // Generate token
     const token = generateToken(user._id);
 
     res.status(200).json({
       success: true,
       token,
+      isFirstLogin: user.isFirstLogin,
       user: {
         id: user._id,
         email: user.email,
@@ -103,6 +111,8 @@ export const login = async (req, res, next) => {
         department: user.department,
         designation: user.designation,
         phone: user.phone,
+        facultyId: user.facultyId,
+        canEditPreferences: user.canEditPreferences,
       },
     });
   } catch (error) {
@@ -115,7 +125,7 @@ export const login = async (req, res, next) => {
 // @access  Private
 export const getMe = async (req, res, next) => {
   try {
-    const user = await User.findById(req.user.id);
+    const user = await User.findById(req.user.id).lean();
 
     res.status(200).json({
       success: true,
@@ -143,6 +153,37 @@ export const updateProfile = async (req, res, next) => {
       success: true,
       data: user,
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Change password (teacher/admin)
+// @route   PUT /api/auth/change-password
+// @access  Private
+export const changePassword = async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ success: false, message: 'Current and new password are required' });
+    }
+
+    const user = await User.findById(req.user.id).select('+password');
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const isMatch = await user.comparePassword(currentPassword);
+    if (!isMatch) {
+      return res.status(401).json({ success: false, message: 'Current password is incorrect' });
+    }
+
+    user.password = newPassword;
+    user.isFirstLogin = false;
+    await user.save();
+
+    return res.status(200).json({ success: true, message: 'Password updated successfully' });
   } catch (error) {
     next(error);
   }

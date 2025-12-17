@@ -28,6 +28,16 @@ const subjectSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    program: {
+      type: String,
+      enum: ['B.E/B.Tech', 'M.Tech'],
+      required: [true, 'Program is required'],
+    },
+    professionalElective: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
   },
   {
     timestamps: true,

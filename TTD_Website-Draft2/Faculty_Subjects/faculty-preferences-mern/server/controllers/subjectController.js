@@ -5,7 +5,7 @@ import Subject from '../models/Subject.js';
 // @access  Private
 export const getSubjects = async (req, res, next) => {
   try {
-    const subjects = await Subject.find().sort({ name: 1 });
+    const subjects = await Subject.find().sort({ name: 1 }).lean();
 
     res.status(200).json({
       success: true,
@@ -22,7 +22,7 @@ export const getSubjects = async (req, res, next) => {
 // @access  Private
 export const getSubject = async (req, res, next) => {
   try {
-    const subject = await Subject.findById(req.params.id);
+    const subject = await Subject.findById(req.params.id).lean();
 
     if (!subject) {
       return res.status(404).json({
