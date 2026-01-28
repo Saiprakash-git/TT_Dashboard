@@ -64,6 +64,7 @@ export default function AuthPage() {
         navigate('/dashboard');
       }
     } else {
+      console.log(result);
       toast.error(result.error || 'Login failed');
     }
   };
