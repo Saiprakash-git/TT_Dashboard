@@ -14,6 +14,7 @@ export default function Dashboard() {
   const [teachers, setTeachers] = useState([]);
   const [allPreferences, setAllPreferences] = useState([]);
   const [userPreference, setUserPreference] = useState(null);
+  const [allocations, setAllocations] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -35,6 +36,8 @@ export default function Dashboard() {
         setAllPreferences(preferencesRes.data.data || []);
       } else {
         setUserPreference(preferencesRes.data.data || null);
+        const allocRes = await api.get('/allocations/my-subjects');
+        setAllocations(allocRes.data.data || []);
       }
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
@@ -182,6 +185,32 @@ export default function Dashboard() {
         ) : (
           // Teacher Dashboard
           <>
+            {/* Allocations Announcement (If any) */}
+            {allocations.length > 0 && (
+              <div className="bg-emerald-50 border-l-4 border-emerald-500 p-4 rounded-r-md shadow-sm mb-6 animate-fade-in">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xl">🎉</span>
+                  <h3 className="text-emerald-800 font-bold text-lg">Subject Allocation Announcement</h3>
+                </div>
+                <p className="text-emerald-700 mb-3">
+                  You have been successfully allocated to the following subject(s) for the current academic session:
+                </p>
+                <div className="grid gap-2 md:grid-cols-2">
+                  {allocations.map((alloc) => (
+                    <div key={alloc._id} className="bg-white border border-emerald-100 p-3 rounded shadow-sm flex items-center justify-between">
+                      <div>
+                        <div className="font-semibold text-slate-800">{alloc.subject?.name}</div>
+                        <div className="text-sm text-slate-500">Code: {alloc.subject?.code} | Sem: {alloc.subject?.semester}</div>
+                      </div>
+                      <div className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2 py-1 rounded">
+                        {alloc.subject?.program}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Status Card */}
             <Card className="animate-slide-up">
               <CardHeader>

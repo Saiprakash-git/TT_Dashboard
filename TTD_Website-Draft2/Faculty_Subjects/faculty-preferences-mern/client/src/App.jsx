@@ -12,7 +12,8 @@ import PreferencesPage from './pages/PreferencesPage';
 import AdminSubjectsPage from './pages/admin/AdminSubjectsPage';
 import AdminTeachersPage from './pages/admin/AdminTeachersPage';
 import AdminPreferencesPage from './pages/admin/AdminPreferencesPage';
-import AllocateSubjectsPage from './pages/admin/AllocateSubjectsPage';
+import AdminPreferenceFormPage from './pages/admin/AdminPreferenceFormPage';
+import AdminAllocationPage from './pages/admin/AdminAllocationPage';
 
 function App() {
   return (
@@ -88,10 +89,19 @@ function App() {
           />
 
           <Route
+            path="/admin/preferences/forms"
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <AdminPreferenceFormPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
             path="/admin/allocate"
             element={
               <ProtectedRoute allowedRoles={['admin']}>
-                <AllocateSubjectsPage />
+                <AdminAllocationPage />
               </ProtectedRoute>
             }
           />

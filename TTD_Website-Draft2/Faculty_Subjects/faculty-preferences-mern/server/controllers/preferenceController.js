@@ -109,12 +109,13 @@ export const savePreference = async (req, res, next) => {
       }
       seen.add(key);
 
-      const ranks = rankMap.get(p.program) || new Set();
+      const rankKey = `${p.program}:${p.semester || 'none'}`;
+      const ranks = rankMap.get(rankKey) || new Set();
       if (p.rank < 1 || p.rank > 3 || ranks.has(p.rank)) {
-        return res.status(400).json({ success: false, message: 'Invalid or duplicate rank for program' });
+        return res.status(400).json({ success: false, message: `Invalid or duplicate rank for ${rankKey}` });
       }
       ranks.add(p.rank);
-      rankMap.set(p.program, ranks);
+      rankMap.set(rankKey, ranks);
     }
 
     if (preference) {

@@ -28,6 +28,11 @@ const subjectSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    semesterNumber: {
+      type: Number,
+      enum: [1, 2, 3, 4, 5, 6, 7, 8],
+      required: false,
+    },
     program: {
       type: String,
       enum: ['B.E/B.Tech', 'M.Tech'],

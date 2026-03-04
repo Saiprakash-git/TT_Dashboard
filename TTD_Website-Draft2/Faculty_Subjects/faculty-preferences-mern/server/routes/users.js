@@ -6,6 +6,7 @@ import {
   deleteUser,
   createTeacher,
   togglePreferenceEdit,
+  bulkUploadTeachers,
 } from '../controllers/userController.js';
 import { protect, authorize } from '../middleware/auth.js';
 
@@ -17,6 +18,8 @@ router.use(protect, authorize('admin'));
 router.route('/').get(getUsers);
 
 router.route('/create-teacher').post(createTeacher);
+
+router.route('/bulk-upload').post(bulkUploadTeachers);
 
 router.route('/:id/toggle-preference-edit').put(togglePreferenceEdit);
 

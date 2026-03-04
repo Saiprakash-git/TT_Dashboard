@@ -20,6 +20,10 @@ const preferenceSchema = new mongoose.Schema(
           enum: ['B.E/B.Tech', 'M.Tech', 'Professional Elective'],
           required: true,
         },
+        semester: {
+          type: String,
+          trim: true,
+        },
         rank: {
           type: Number,
           required: true,

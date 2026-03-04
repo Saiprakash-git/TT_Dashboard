@@ -1,0 +1,249 @@
+[
+  {
+    "_id": "69a2fd9f03f3f4cc8b57da79",
+    "name": "B.E/B.Tech IT 2025-26",
+    "description": "",
+    "minimumPreferences": 2,
+    "preferencesPerSemester": 3,
+    "includedSemesters": [
+      "Even",
+      "Odd"
+    ],
+    "allocationMethod": "automatic",
+    "status": "closed",
+    "startsAt": null,
+    "endsAt": null,
+    "createdBy": "693832fd73d18d633f1d5f30",
+    "subjects": [
+      {
+        "semester": "Even",
+        "subjectIds": [
+          {
+            "_id": "69a2f54803f3f4cc8b57da44",
+            "name": "Probability and Queueing  Theory",
+            "code": "22MTC15",
+            "credits": 3,
+            "semester": "Even",
+            "semesterNumber": 4,
+            "program": "B.E/B.Tech",
+            "professionalElective": false
+          },
+          {
+            "_id": "69a2f57503f3f4cc8b57da49",
+            "name": "Digital circuits , sensors and transducers(DCCST)",
+            "code": "22ECC40",
+            "credits": 3,
+            "semester": "Even",
+            "semesterNumber": 4,
+            "program": "B.E/B.Tech",
+            "professionalElective": false
+          },
+          {
+            "_id": "69a2f58503f3f4cc8b57da4e",
+            "name": "DBMS",
+            "code": "22CSC11",
+            "credits": 3,
+            "semester": "Even",
+            "semesterNumber": 4,
+            "program": "B.E/B.Tech",
+            "professionalElective": false
+          },
+          {
+            "_id": "69a2f59703f3f4cc8b57da53",
+            "name": "Design and Analysis of  Algorithms",
+            "code": "22CSC14",
+            "credits": 3,
+            "semester": "Even",
+            "semesterNumber": 4,
+            "program": "B.E/B.Tech",
+            "professionalElective": false
+          },
+          {
+            "_id": "69a2f5cd03f3f4cc8b57da58",
+            "name": "Big Data Analytics",
+            "code": "22ADC12",
+            "credits": 3,
+            "semester": "Even",
+            "semesterNumber": 6,
+            "program": "B.E/B.Tech",
+            "professionalElective": false
+          },
+          {
+            "_id": "69a2f5e003f3f4cc8b57da5d",
+            "name": "Embedded Systems and  Internet of Things",
+            "code": "22ITC13",
+            "credits": 3,
+            "semester": "Even",
+            "semesterNumber": 6,
+            "program": "B.E/B.Tech",
+            "professionalElective": false
+          },
+          {
+            "_id": "69a2f5f703f3f4cc8b57da62",
+            "name": "Deep Learning",
+            "code": "22CAC04",
+            "credits": 3,
+            "semester": "Even",
+            "semesterNumber": 6,
+            "program": "B.E/B.Tech",
+            "professionalElective": false
+          },
+          {
+            "_id": "69a2f61503f3f4cc8b57da67",
+            "name": "Compiler Design",
+            "code": "22CSC24",
+            "credits": 3,
+            "semester": "Even",
+            "semesterNumber": 6,
+            "program": "B.E/B.Tech",
+            "professionalElective": false
+          },
+          {
+            "_id": "69a2f62903f3f4cc8b57da6c",
+            "name": "Artificial Intelligence",
+            "code": "22CAC15",
+            "credits": 3,
+            "semester": "Even",
+            "semesterNumber": 6,
+            "program": "B.E/B.Tech",
+            "professionalElective": false
+          }
+        ],
+        "_id": "69a33dbef03ff030868c9444"
+      },
+      {
+        "semester": "Odd",
+        "subjectIds": [
+          {
+            "_id": "69a2f43303f3f4cc8b57da12",
+            "name": "Data Structures",
+            "code": "CS221",
+            "credits": 3,
+            "semester": "Odd",
+            "semesterNumber": 3,
+            "program": "B.E/B.Tech",
+            "professionalElective": false
+          },
+          {
+            "_id": "69a2f44703f3f4cc8b57da17",
+            "name": "Operating System",
+            "code": "CS231",
+            "credits": 3,
+            "semester": "Odd",
+            "semesterNumber": 3,
+            "program": "B.E/B.Tech",
+            "professionalElective": false
+          },
+          {
+            "_id": "69a2f45c03f3f4cc8b57da1c",
+            "name": "DLCA",
+            "code": "22CSC231",
+            "credits": 3,
+            "semester": "Odd",
+            "semesterNumber": 3,
+            "program": "B.E/B.Tech",
+            "professionalElective": false
+          },
+          {
+            "_id": "69a2f47f03f3f4cc8b57da21",
+            "name": "FLAT",
+            "code": "22CSI321",
+            "credits": 3,
+            "semester": "Odd",
+            "semesterNumber": 5,
+            "program": "B.E/B.Tech",
+            "professionalElective": false
+          },
+          {
+            "_id": "69a2f4af03f3f4cc8b57da26",
+            "name": "Software Engineering",
+            "code": "22CSC21",
+            "credits": 3,
+            "semester": "Odd",
+            "semesterNumber": 5,
+            "program": "B.E/B.Tech",
+            "professionalElective": false
+          },
+          {
+            "_id": "69a2f4c103f3f4cc8b57da2b",
+            "name": "Enterprise Application Development",
+            "code": "22ITC08",
+            "credits": 3,
+            "semester": "Odd",
+            "semesterNumber": 5,
+            "program": "B.E/B.Tech",
+            "professionalElective": false
+          },
+          {
+            "_id": "69a2f4d403f3f4cc8b57da30",
+            "name": "Machine Learning",
+            "code": "22CAC17",
+            "credits": 3,
+            "semester": "Odd",
+            "semesterNumber": 5,
+            "program": "B.E/B.Tech",
+            "professionalElective": false
+          },
+          {
+            "_id": "69a2f4e103f3f4cc8b57da35",
+            "name": "Computer Networks",
+            "code": "22ITC10",
+            "credits": 3,
+            "semester": "Odd",
+            "semesterNumber": 5,
+            "program": "B.E/B.Tech",
+            "professionalElective": false
+          },
+          {
+            "_id": "69a2f51303f3f4cc8b57da3a",
+            "name": "Discrete  Mathematics",
+            "code": "22CSC32",
+            "credits": 3,
+            "semester": "Odd",
+            "semesterNumber": 3,
+            "program": "B.E/B.Tech",
+            "professionalElective": false
+          },
+          {
+            "_id": "69a2f52203f3f4cc8b57da3f",
+            "name": "Java Programming",
+            "code": "22ITC02",
+            "credits": 3,
+            "semester": "Odd",
+            "semesterNumber": 3,
+            "program": "B.E/B.Tech",
+            "professionalElective": false
+          }
+        ],
+        "_id": "69a33dbef03ff030868c9445"
+      }
+    ],
+    "submittedTeachers": [],
+    "allocations": [],
+    "createdAt": "2026-02-28T14:37:19.515Z",
+    "updatedAt": "2026-02-28T19:10:55.002Z",
+    "__v": 1
+  },
+  {
+    "_id": "69a33b4c8e1886b96548c90f",
+    "name": "BE IT 25-26",
+    "description": "",
+    "minimumPreferences": 8,
+    "preferencesPerSemester": 3,
+    "includedSemesters": [
+      "Even",
+      "Odd"
+    ],
+    "allocationMethod": "automatic",
+    "status": "active",
+    "startsAt": null,
+    "endsAt": null,
+    "createdBy": "693832fd73d18d633f1d5f30",
+    "subjects": [],
+    "submittedTeachers": [],
+    "allocations": [],
+    "createdAt": "2026-02-28T19:00:28.101Z",
+    "updatedAt": "2026-02-28T19:00:30.249Z",
+    "__v": 0
+  }
+]

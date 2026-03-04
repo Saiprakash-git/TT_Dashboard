@@ -1,0 +1,11 @@
+fullName,email,facultyId,department,designation,phone,password
+Dr. Rajesh Kumar,rajesh.kumar@college.edu,CSE001,Computer Science & Engineering,Associate Professor,9876543210,
+Dr. Priya Sharma,priya.sharma@college.edu,CSE002,Computer Science & Engineering,Assistant Professor,9876543211,
+Dr. Amit Patel,amit.patel@college.edu,CSE003,Computer Science & Engineering,Professor,9876543212,welcome@123
+Dr. Sarah Johnson,sarah.johnson@college.edu,ECE001,Electronics & Communication,Associate Professor,9876543213,
+Dr. Michael Chen,michael.chen@college.edu,ECE002,Electronics & Communication,Assistant Professor,9876543214,
+Dr. Neha Gupta,neha.gupta@college.edu,ME001,Mechanical Engineering,Associate Professor,9876543215,
+Dr. Vikram Singh,vikram.singh@college.edu,ME002,Mechanical Engineering,Assistant Professor,9876543216,temp@2024
+Dr. Lisa Anderson,lisa.anderson@college.edu,CIVIL001,Civil Engineering,Professor,9876543217,
+Dr. Ravi Verma,ravi.verma@college.edu,ECE003,Electronics & Communication,Assistant Professor,9876543218,
+Dr. Anjali Desai,anjali.desai@college.edu,CSE004,Computer Science & Engineering,Lecturer,9876543219,

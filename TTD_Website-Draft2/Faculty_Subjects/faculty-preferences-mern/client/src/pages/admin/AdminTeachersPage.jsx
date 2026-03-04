@@ -2,6 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { DashboardLayout } from '../../components/DashboardLayout';
 import api from '../../utils/api';
 import { toast } from 'sonner';
+import * as XLSX from 'xlsx';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card';
+import { Button } from '../../components/ui/button';
+import { Input } from '../../components/ui/input';
+import { Label } from '../../components/ui/label';
+import { Badge } from '../../components/ui/badge';
+import { Users, Upload, UserPlus, Trash2, History, CheckCircle, ShieldAlert } from 'lucide-react';
 
 const initialForm = {
   fullName: '',
@@ -16,12 +23,28 @@ const initialForm = {
 const AdminTeachersPage = () => {
   const [teachers, setTeachers] = useState([]);
   const [preferences, setPreferences] = useState([]);
+  const [allocations, setAllocations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [form, setForm] = useState(initialForm);
   const [creating, setCreating] = useState(false);
   const [toggling, setToggling] = useState('');
+  const [bulkUploading, setBulkUploading] = useState(false);
+  const [uploadResults, setUploadResults] = useState(null);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  
+  // Delete-related states
+  const [deleting, setDeleting] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showReplacementModal, setShowReplacementModal] = useState(false);
+  const [selectedTeacherForDeletion, setSelectedTeacherForDeletion] = useState(null);
+  const [allocationsToReassign, setAllocationsToReassign] = useState([]);
+  const [selectedReplacementTeacher, setSelectedReplacementTeacher] = useState('');
+  
+  // History Modal states
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [selectedTeacherForHistory, setSelectedTeacherForHistory] = useState(null);
 
   useEffect(() => {
     fetchData();
@@ -29,12 +52,14 @@ const AdminTeachersPage = () => {
 
   const fetchData = async () => {
     try {
-      const [teachersRes, preferencesRes] = await Promise.all([
+      const [teachersRes, preferencesRes, allocsRes] = await Promise.all([
         api.get('/users'),
         api.get('/preferences'),
+        api.get('/allocations')
       ]);
       setTeachers(teachersRes.data.data || []);
       setPreferences(preferencesRes.data.data || []);
+      setAllocations(allocsRes.data.data || []);
       setError('');
     } catch (err) {
       setError('Failed to load data');
@@ -52,16 +77,96 @@ const AdminTeachersPage = () => {
     return map;
   }, [preferences]);
 
+  const teacherAllocations = useMemo(() => {
+    const map = new Map();
+    allocations.forEach((alloc) => {
+      const tid = alloc.teacher?._id || alloc.teacher;
+      if (!map.has(tid)) {
+        map.set(tid, []);
+      }
+      map.get(tid).push(alloc);
+    });
+    return map;
+  }, [allocations]);
+
+  const handleOpenHistory = (teacher) => {
+    setSelectedTeacherForHistory(teacher);
+    setShowHistoryModal(true);
+  };
+
   const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this user?')) return;
+    const teacher = teachers.find(t => t._id === id);
+    if (!teacher) return;
+
+    setDeleting(id);
+    setSelectedTeacherForDeletion(teacher);
 
     try {
-      await api.delete(`/users/${id}`);
-      setMessage('User deleted successfully!');
-      fetchData();
+      // First, try to delete (backend will check for allocations)
+      const response = await api.delete(`/users/${id}`);
+
+      // If successful deletion (no allocations)
+      if (response.data.success) {
+        toast.success(response.data.message);
+        fetchData();
+        setDeleting('');
+        setSelectedTeacherForDeletion(null);
+      }
     } catch (err) {
-      console.error('Failed to delete user:', err);
+      // Check if backend returned allocation info
+      const responseData = err.response?.data;
+      
+      if (responseData?.requiresReplacement) {
+        // Teacher has allocations, show replacement modal
+        setAllocationsToReassign(responseData.allocations || []);
+        setShowReplacementModal(true);
+        setDeleting('');
+      } else {
+        // Other error
+        const msg = responseData?.message || 'Failed to delete teacher';
+        toast.error(msg);
+        setDeleting('');
+        setSelectedTeacherForDeletion(null);
+      }
     }
+  };
+
+  const handleConfirmDeletion = async () => {
+    if (!selectedTeacherForDeletion) return;
+
+    setDeleting(selectedTeacherForDeletion._id);
+    
+    try {
+      const response = await api.delete(`/users/${selectedTeacherForDeletion._id}`, {
+        data: { replacementTeacherId: selectedReplacementTeacher }
+      });
+
+      if (response.data.success) {
+        toast.success(response.data.message);
+        if (response.data.reassignedCount > 0) {
+          toast.info(`${response.data.reassignedCount} subject(s) reassigned successfully`);
+        }
+        fetchData();
+        setShowReplacementModal(false);
+        setSelectedReplacementTeacher('');
+        setAllocationsToReassign([]);
+        setSelectedTeacherForDeletion(null);
+      }
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Failed to delete teacher';
+      toast.error(msg);
+    } finally {
+      setDeleting('');
+    }
+  };
+
+  const handleCancelDeletion = () => {
+    setShowReplacementModal(false);
+    setShowDeleteConfirm(false);
+    setSelectedReplacementTeacher('');
+    setAllocationsToReassign([]);
+    setSelectedTeacherForDeletion(null);
+    setDeleting('');
   };
 
   const handleCreate = async (e) => {
@@ -102,181 +207,434 @@ const AdminTeachersPage = () => {
     }
   };
 
+  const handleBulkUploadFile = async (file) => {
+    if (!file) return;
+
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const data = XLSX.utils.sheet_to_json(worksheet);
+
+      if (!data || data.length === 0) {
+        toast.error('Excel file is empty or invalid');
+        return;
+      }
+
+      // Validate headers
+      const requiredHeaders = ['fullName', 'email', 'facultyId'];
+      const headers = Object.keys(data[0]);
+      const missingHeaders = requiredHeaders.filter(h => !headers.includes(h));
+      if (missingHeaders.length > 0) {
+        toast.error(`Missing required columns: ${missingHeaders.join(', ')}`);
+        return;
+      }
+
+      setBulkUploading(true);
+      const res = await api.post('/users/bulk-upload', { teachers: data });
+      
+      setUploadResults(res.data);
+      setShowUploadModal(true);
+
+      if (res.data.errorCount === 0) {
+        toast.success(`✓ Successfully added ${res.data.successCount} teachers!`);
+      } else {
+        toast.warning(`Added ${res.data.successCount} teachers, ${res.data.errorCount} errors`);
+      }
+
+      fetchData();
+    } catch (err) {
+      console.error('Error processing file:', err);
+      toast.error(err.response?.data?.message || 'Failed to process Excel file');
+    } finally {
+      setBulkUploading(false);
+    }
+  };
+
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="loading">Loading teachers...</div>
+        <div className="flex items-center justify-center min-h-[50vh] text-slate-500">
+          <div className="animate-pulse flex flex-col items-center">
+            <Users className="w-10 h-10 mb-4 opacity-50" />
+            <p>Loading teachers data...</p>
+          </div>
+        </div>
       </DashboardLayout>
     );
   }
 
   return (
     <DashboardLayout>
-      <div className="container teachers-container">
-        <div className="page-header">
-          <h1>👥 Manage Teachers</h1>
-          <p className="subtitle">Create faculty accounts, control preference editing, and track submissions</p>
+      <div className="max-w-7xl mx-auto space-y-6 animate-fade-in pb-12">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900 flex items-center gap-3">
+              <Users className="w-8 h-8 text-indigo-600" /> Manage Teachers
+            </h1>
+            <p className="text-slate-500 mt-1">Create faculty accounts, manage permissions, and track submissions</p>
+          </div>
         </div>
 
-        {message && <div className="alert alert-success">{message}</div>}
-        {error && <div className="alert alert-error">{error}</div>}
+        {message && <div className="bg-emerald-50 text-emerald-700 p-4 rounded-md border border-emerald-200">{message}</div>}
+        {error && <div className="bg-rose-50 text-rose-700 p-4 rounded-md border border-rose-200">{error}</div>}
 
-        <div className="card form-card">
-          <div className="card-header">
-            <h2>Add Teacher</h2>
-            <p className="muted">Faculty ID is required for login. Leave password blank to force first-time reset.</p>
-          </div>
-          <div className="card-body">
-            <form className="teacher-form" onSubmit={handleCreate}>
-              <div className="form-grid">
-                <label>
-                  <span>Full Name *</span>
-                  <input
-                    type="text"
-                    value={form.fullName}
-                    onChange={(e) => setForm({ ...form, fullName: e.target.value })}
-                    required
-                  />
-                </label>
-                <label>
-                  <span>Email *</span>
-                  <input
-                    type="email"
-                    value={form.email}
-                    onChange={(e) => setForm({ ...form, email: e.target.value })}
-                    required
-                  />
-                </label>
-                <label>
-                  <span>Faculty ID *</span>
-                  <input
-                    type="text"
-                    value={form.facultyId}
-                    onChange={(e) => setForm({ ...form, facultyId: e.target.value })}
-                    required
-                  />
-                </label>
-                <label>
-                  <span>Department</span>
-                  <input
-                    type="text"
-                    value={form.department}
-                    onChange={(e) => setForm({ ...form, department: e.target.value })}
-                  />
-                </label>
-                <label>
-                  <span>Designation</span>
-                  <input
-                    type="text"
-                    value={form.designation}
-                    onChange={(e) => setForm({ ...form, designation: e.target.value })}
-                  />
-                </label>
-                <label>
-                  <span>Phone</span>
-                  <input
-                    type="tel"
-                    value={form.phone}
-                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                  />
-                </label>
-                <label>
-                  <span>Temp Password</span>
-                  <input
-                    type="text"
-                    value={form.password}
-                    placeholder="Leave empty to require reset"
-                    onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  />
-                </label>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card className="shadow-sm border-slate-200">
+            <CardHeader className="bg-slate-50/50 border-b">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <UserPlus className="w-5 h-5 text-indigo-500" /> Add Single Teacher
+              </CardTitle>
+              <CardDescription>Create a new faculty account manually</CardDescription>
+            </CardHeader>
+            <CardContent className="p-6">
+              <form onSubmit={handleCreate} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Full Name *</Label>
+                    <Input required value={form.fullName} onChange={e => setForm({...form, fullName: e.target.value})} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Email *</Label>
+                    <Input required type="email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Faculty ID *</Label>
+                    <Input required value={form.facultyId} onChange={e => setForm({...form, facultyId: e.target.value})} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Department</Label>
+                    <Input value={form.department} onChange={e => setForm({...form, department: e.target.value})} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Designation</Label>
+                    <Input value={form.designation} onChange={e => setForm({...form, designation: e.target.value})} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Phone</Label>
+                    <Input type="tel" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} />
+                  </div>
+                  <div className="space-y-2 md:col-span-2 relative">
+                    <Label>Temporary Password</Label>
+                    <Input value={form.password} onChange={e => setForm({...form, password: e.target.value})} placeholder="Leave blank to force first-time reset" className="bg-slate-50" />
+                  </div>
+                </div>
+                <Button type="submit" className="w-full mt-2" disabled={creating}>
+                  {creating ? 'Creating...' : 'Create Teacher Account'}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-sm border-slate-200">
+            <CardHeader className="bg-slate-50/50 border-b">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Upload className="w-5 h-5 text-indigo-500" /> Bulk Upload Teachers
+              </CardTitle>
+              <CardDescription>Upload multiple teachers at once via Excel</CardDescription>
+            </CardHeader>
+            <CardContent className="p-6">
+              <div className="bg-indigo-50/50 rounded-lg p-5 border border-indigo-100">
+                <h3 className="font-semibold text-indigo-900 mb-2 text-sm">Required Excel Columns:</h3>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  <Badge variant="secondary" className="bg-white border-indigo-200">fullName</Badge>
+                  <Badge variant="secondary" className="bg-white border-indigo-200">email</Badge>
+                  <Badge variant="secondary" className="bg-white border-indigo-200">facultyId</Badge>
+                </div>
+                <h3 className="font-semibold text-indigo-900 mb-2 text-sm">Optional Columns:</h3>
+                <div className="flex flex-wrap gap-2 mb-6">
+                  <Badge variant="outline" className="bg-white/50 text-slate-500">department</Badge>
+                  <Badge variant="outline" className="bg-white/50 text-slate-500">designation</Badge>
+                  <Badge variant="outline" className="bg-white/50 text-slate-500">phone</Badge>
+                  <Badge variant="outline" className="bg-white/50 text-slate-500">password</Badge>
+                </div>
+                
+                <div className="flex items-center justify-center w-full">
+                  <label htmlFor="bulk-upload" className="flex flex-col items-center justify-center w-full h-32 border-2 border-indigo-200 border-dashed rounded-lg cursor-pointer bg-white hover:bg-slate-50 transition-colors">
+                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                      <Upload className="w-8 h-8 mb-3 text-indigo-500" />
+                      <p className="mb-2 text-sm text-slate-500 font-semibold">{bulkUploading ? 'Processing...' : 'Click or drag excel file here'}</p>
+                      <p className="text-xs text-slate-400">.xlsx, .xls, .csv allowed</p>
+                    </div>
+                    <input id="bulk-upload" type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={(e) => handleBulkUploadFile(e.target.files[0])} disabled={bulkUploading} />
+                  </label>
+                </div>
               </div>
-              <button type="submit" className="btn btn-primary" disabled={creating}>
-                {creating ? 'Creating...' : 'Create Teacher'}
-              </button>
-            </form>
-          </div>
+            </CardContent>
+          </Card>
         </div>
 
-        <div className="card">
-          <div className="card-header">
-            <h2>Teachers List ({teachers.length})</h2>
+        {/* Upload Results Modal */}
+        {showUploadModal && uploadResults && (
+          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowUploadModal(false)}>
+            <Card className="max-w-xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <CardHeader className="bg-slate-50 border-b flex flex-row items-center justify-between sticky top-0 z-10">
+                <CardTitle>📈 Upload Results</CardTitle>
+                <Button variant="ghost" size="icon" onClick={() => setShowUploadModal(false)} className="rounded-full">✕</Button>
+              </CardHeader>
+              <CardContent className="pt-6 space-y-6">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-lg flex flex-col items-center justify-center">
+                    <span className="text-3xl font-bold text-emerald-600">{uploadResults.successCount}</span>
+                    <span className="text-sm font-medium text-emerald-800">Successfully Added</span>
+                  </div>
+                  <div className={`border p-4 rounded-lg flex flex-col items-center justify-center ${uploadResults.errorCount > 0 ? 'bg-rose-50 border-rose-100' : 'bg-slate-50 text-slate-500'}`}>
+                    <span className={`text-3xl font-bold ${uploadResults.errorCount > 0 ? 'text-rose-600' : ''}`}>{uploadResults.errorCount}</span>
+                    <span className="text-sm font-medium">Errors</span>
+                  </div>
+                </div>
+
+                {uploadResults.data.success.length > 0 && (
+                  <div>
+                    <h3 className="font-semibold text-emerald-700 flex items-center mb-2"><CheckCircle className="w-4 h-4 mr-2" /> Added Teachers ({uploadResults.data.success.length})</h3>
+                    <div className="max-h-40 overflow-y-auto border rounded-md p-2 bg-slate-50 space-y-2">
+                      {uploadResults.data.success.map((item, idx) => (
+                        <div key={idx} className="flex justify-between items-center text-sm bg-white p-2 rounded shadow-sm border border-slate-100">
+                          <span className="font-medium text-slate-700">{item.fullName}</span>
+                          <span className="text-xs text-slate-500 font-mono">{item.facultyId}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {uploadResults.data.errors.length > 0 && (
+                  <div>
+                    <h3 className="font-semibold text-rose-700 flex items-center mb-2"><ShieldAlert className="w-4 h-4 mr-2" /> Encountered Errors ({uploadResults.data.errors.length})</h3>
+                    <div className="max-h-60 overflow-y-auto border border-rose-100 rounded-md p-2 bg-rose-50/50 space-y-2">
+                      {uploadResults.data.errors.map((item, idx) => (
+                        <div key={idx} className="text-sm bg-white p-2 rounded shadow-sm border border-rose-100 break-words">
+                          <span className="font-bold text-rose-600 mr-2">Row {item.row}:</span>
+                          <span className="text-rose-800">{item.message}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                <Button className="w-full" onClick={() => setShowUploadModal(false)}>Close Summary</Button>
+              </CardContent>
+            </Card>
           </div>
-          <div className="card-body">
+        )}
+
+        {/* Replacement Teacher Selection Modal */}
+        {showReplacementModal && selectedTeacherForDeletion && (
+          <div className="modal-overlay" onClick={handleCancelDeletion}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2>⚠️ Teacher Has Subject Allocations</h2>
+                <button className="modal-close" onClick={handleCancelDeletion}>×</button>
+              </div>
+              <div className="modal-body">
+                <div className="warning-message">
+                  <p><strong>{selectedTeacherForDeletion.fullName}</strong> is currently assigned to the following subject(s):</p>
+                </div>
+
+                <div className="allocations-list">
+                  {allocationsToReassign.map((allocation, idx) => (
+                    <div key={idx} className="allocation-item">
+                      <span className="allocation-badge">📚</span>
+                      <div>
+                        <div className="allocation-name">{allocation.subjectName}</div>
+                        <div className="allocation-meta">{allocation.subjectCode} • {allocation.academicYear}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="replacement-section">
+                  <h3>Select Replacement Teacher</h3>
+                  <p className="help-text">Choose another teacher to take over these subject allocations before deleting.</p>
+                  
+                  <select
+                    className="form-select"
+                    value={selectedReplacementTeacher}
+                    onChange={(e) => setSelectedReplacementTeacher(e.target.value)}
+                  >
+                    <option value="">-- Select Replacement Teacher --</option>
+                    {teachers
+                      .filter(t => t._id !== selectedTeacherForDeletion._id && t.role === 'teacher')
+                      .map(teacher => (
+                        <option key={teacher._id} value={teacher._id}>
+                          {teacher.fullName} ({teacher.facultyId}) - {teacher.department || 'No Dept'}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+
+                <div className="confirmation-message">
+                  <p><strong>⚠️ Warning:</strong> This action cannot be undone. The teacher will be permanently deleted and all their subject allocations will be transferred to the selected replacement teacher.</p>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-secondary" onClick={handleCancelDeletion}>
+                  Cancel
+                </button>
+                <button 
+                  className="btn btn-danger" 
+                  onClick={handleConfirmDeletion}
+                  disabled={!selectedReplacementTeacher || deleting}
+                >
+                  {deleting ? 'Deleting...' : `Delete & Reassign (${allocationsToReassign.length})`}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* History Modal */}
+        {showHistoryModal && selectedTeacherForHistory && (
+          <div className="modal-overlay" onClick={() => setShowHistoryModal(false)}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2>📜 {selectedTeacherForHistory.fullName} - History</h2>
+                <button className="modal-close" onClick={() => setShowHistoryModal(false)}>×</button>
+              </div>
+              <div className="modal-body">
+                <div className="mb-6">
+                  <h3 className="text-lg font-bold border-b pb-2 mb-3">Current Allocations</h3>
+                  {teacherAllocations.has(selectedTeacherForHistory._id) && teacherAllocations.get(selectedTeacherForHistory._id).length > 0 ? (
+                    <div className="grid gap-2">
+                      {teacherAllocations.get(selectedTeacherForHistory._id).map((alloc, idx) => (
+                        <div key={idx} className="bg-emerald-50 border border-emerald-100 p-3 rounded flex flex-col">
+                          <span className="font-semibold text-emerald-800">{alloc.subject?.name} ({alloc.subject?.code})</span>
+                          <span className="text-sm text-emerald-600">Semester: {alloc.subject?.semester || 'N/A'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-slate-500 italic">No subjects currently allocated.</p>
+                  )}
+                </div>
+
+                <div>
+                  <h3 className="text-lg font-bold border-b pb-2 mb-3">Preference History</h3>
+                  {preferenceMap.has(selectedTeacherForHistory._id) && preferenceMap.get(selectedTeacherForHistory._id).preferences?.length > 0 ? (
+                    <div className="grid gap-2">
+                      {preferenceMap.get(selectedTeacherForHistory._id).preferences.map((p, idx) => (
+                        <div key={idx} className="bg-slate-50 border border-slate-200 p-3 rounded flex items-center justify-between">
+                          <div>
+                            <span className="font-semibold block">{p.subject?.name} ({p.subject?.code})</span>
+                            <span className="text-sm text-slate-500">Program: {p.program}</span>
+                          </div>
+                          <span className="bg-indigo-100 text-indigo-800 font-bold px-3 py-1 rounded">Rank #{p.rank}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-slate-500 italic">No preferences submitted.</p>
+                  )}
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-secondary" onClick={() => setShowHistoryModal(false)}>
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Main Teacher Table using standard styling classes equivalent to tailwind */}
+        <Card className="shadow-sm border-slate-200 mt-6">
+          <CardHeader className="bg-slate-50 border-b flex flex-row items-center justify-between">
+            <div>
+              <CardTitle>Registered Faculty List ({teachers.length})</CardTitle>
+              <CardDescription>View all faculty, manage roles, and review preferences</CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
             {teachers.length === 0 ? (
-              <div className="empty-state">
-                <p>No teachers registered yet</p>
+              <div className="text-center py-12">
+                <Users className="w-12 h-12 mx-auto text-slate-300 mb-3" />
+                <p className="text-slate-500 font-medium">No teachers exist in the system yet.</p>
               </div>
             ) : (
-              <div className="table-wrapper">
-                <table className="table teachers-table">
-                  <thead>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-white text-slate-500 uppercase text-xs font-semibold border-b">
                     <tr>
-                      <th>Name</th>
-                      <th>Faculty ID</th>
-                      <th>Email</th>
-                      <th>Role</th>
-                      <th>Can Edit Prefs</th>
-                      <th>Department</th>
-                      <th>Designation</th>
-                      <th>Phone</th>
-                      <th>Preference Status</th>
-                      <th>Actions</th>
+                      <th className="px-4 py-3">Name & ID</th>
+                      <th className="px-4 py-3">Department</th>
+                      <th className="px-4 py-3">Role & Permissions</th>
+                      <th className="px-4 py-3 w-64">Allocated Subject(s)</th>
+                      <th className="px-4 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    {teachers.map((teacher) => {
+                  <tbody className="divide-y divide-slate-100">
+                    {teachers.map((teacher, idx) => {
                       const hasPreference = preferenceMap.has(teacher._id);
                       const canEdit = teacher.canEditPreferences;
                       const isAdmin = teacher.role === 'admin';
                       return (
-                        <tr key={teacher._id}>
-                          <td className="name-cell">
-                            <strong>{teacher.fullName}</strong>
+                        <tr key={teacher._id} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-4 py-3">
+                            <div className="font-medium text-slate-900">{teacher.fullName}</div>
+                            <div className="text-slate-500 text-xs font-mono">{teacher.facultyId} | {teacher.email}</div>
                           </td>
-                          <td className="mono">{teacher.facultyId || '-'}</td>
-                          <td className="email-cell">{teacher.email}</td>
-                          <td>
-                            <span
-                              className={`badge ${
-                                teacher.role === 'admin' ? 'badge-admin' : 'badge-teacher'
-                              }`}
-                            >
-                              {teacher.role.charAt(0).toUpperCase() + teacher.role.slice(1)}
-                            </span>
+                          <td className="px-4 py-3">
+                            <span className="text-slate-700">{teacher.department || '-'}</span>
+                            <div className="text-xs text-slate-400">{teacher.designation}</div>
                           </td>
-                          <td className="status-cell">
-                            <span className={`status-badge ${canEdit ? 'status-submitted' : 'status-pending'}`}>
-                              {canEdit ? 'Allowed' : 'Disabled'}
-                            </span>
+                          <td className="px-4 py-3 space-y-1">
+                            <div className="flex items-center gap-2">
+                              {isAdmin ? (
+                                <Badge className="bg-rose-100 text-rose-700 hover:bg-rose-200 shadow-none border-none">Admin</Badge>
+                              ) : (
+                                <Badge variant="secondary" className="bg-blue-50 text-blue-700 hover:bg-blue-100 shadow-none border-none">Faculty</Badge>
+                              )}
+                              {!isAdmin && (
+                                <Badge variant="outline" className={hasPreference ? 'border-emerald-200 text-emerald-700 bg-emerald-50' : 'border-amber-200 text-amber-700 bg-amber-50'}>
+                                  {hasPreference ? 'Opt: Done' : 'Opt: Pnd'}
+                                </Badge>
+                              )}
+                            </div>
                             {!isAdmin && (
                               <button
-                                className="btn btn-xs btn-secondary"
                                 onClick={() => handleToggleEdit(teacher._id)}
                                 disabled={toggling === teacher._id}
+                                className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded transition-colors ${canEdit ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'}`}
                               >
-                                {toggling === teacher._id ? 'Updating...' : canEdit ? 'Disable' : 'Allow'}
+                                {toggling === teacher._id ? 'WAIT..' : canEdit ? 'Forms Opened' : 'Forms Locked'}
                               </button>
                             )}
                           </td>
-                          <td>{teacher.department || '-'}</td>
-                          <td>{teacher.designation || '-'}</td>
-                          <td>{teacher.phone || '-'}</td>
-                          <td className="status-cell">
-                            {hasPreference ? (
-                              <span className="status-badge status-submitted">✓ Submitted</span>
+                          <td className="px-4 py-3">
+                            {teacherAllocations.has(teacher._id) && teacherAllocations.get(teacher._id).length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {teacherAllocations.get(teacher._id).map((alloc, idx) => (
+                                  <span key={idx} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800" title={alloc.subject?.name}>
+                                    {alloc.subject?.code || 'SUB'}
+                                  </span>
+                                ))}
+                              </div>
                             ) : (
-                              <span className="status-badge status-pending">⏱ Pending</span>
+                              <span className="text-slate-400 text-xs italic">Unallocated</span>
                             )}
                           </td>
-                          <td className="action-cell">
-                            <button
-                              onClick={() => handleDelete(teacher._id)}
-                              className="btn btn-sm btn-danger"
-                              disabled={isAdmin}
-                              title={isAdmin ? 'Cannot delete admin users' : 'Delete this user'}
-                            >
-                              Delete
-                            </button>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              {hasPreference && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8 px-2 bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100"
+                                  onClick={() => handleOpenHistory(teacher)}
+                                >
+                                  <History className="w-3.5 h-3.5 mr-1" /> History
+                                </Button>
+                              )}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 px-2 border-rose-200 text-rose-600 bg-rose-50 hover:bg-rose-100"
+                                onClick={() => handleDelete(teacher._id)}
+                                disabled={isAdmin || deleting === teacher._id}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -285,299 +643,11 @@ const AdminTeachersPage = () => {
                 </table>
               </div>
             )}
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
 
-      <style>{`
-        .teachers-container {
-          max-width: 1200px;
-        }
-
-        .page-header {
-          margin-bottom: 30px;
-        }
-
-        .page-header h1 {
-          font-size: 32px;
-          font-weight: 600;
-          margin: 0 0 8px 0;
-          color: #2c3e50;
-        }
-
-        .page-header .subtitle {
-          color: #7f8c8d;
-          margin: 0;
-        }
-
-        .card {
-          border: 1px solid #e0e6ed;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-          background: #fff;
-          border-radius: 6px;
-          overflow: hidden;
-          margin-bottom: 20px;
-        }
-
-        .card-header {
-          padding: 20px 24px;
-          border-bottom: 1px solid #e0e6ed;
-          background: #f8f9fa;
-        }
-
-        .card-header h2 {
-          margin: 0;
-          font-size: 16px;
-          color: #2c3e50;
-          font-weight: 600;
-        }
-
-        .card-header .muted {
-          margin: 6px 0 0 0;
-          color: #7f8c8d;
-          font-size: 13px;
-        }
-
-        .card-body {
-          padding: 16px 20px 20px 20px;
-        }
-
-        .form-card .card-body {
-          padding-top: 0;
-        }
-
-        .teacher-form {
-          display: flex;
-          flex-direction: column;
-          gap: 16px;
-        }
-
-        .form-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-          gap: 14px 16px;
-        }
-
-        .form-grid label {
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-          font-size: 13px;
-          color: #2c3e50;
-          font-weight: 600;
-        }
-
-        .form-grid input {
-          padding: 10px 12px;
-          border: 1px solid #d1d9e6;
-          border-radius: 4px;
-          font-size: 14px;
-        }
-
-        .form-grid input:focus {
-          outline: none;
-          border-color: #007bff;
-          box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.1);
-        }
-
-        .table-wrapper {
-          overflow-x: auto;
-        }
-
-        .teachers-table {
-          width: 100%;
-          border-collapse: collapse;
-        }
-
-        .teachers-table th {
-          background: #f8f9fa;
-          padding: 12px;
-          text-align: left;
-          font-weight: 600;
-          color: #2c3e50;
-          border-bottom: 2px solid #e0e6ed;
-          font-size: 13px;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-        }
-
-        .teachers-table td {
-          padding: 12px;
-          border-bottom: 1px solid #e8ecf1;
-          font-size: 14px;
-        }
-
-        .teachers-table tbody tr:hover {
-          background: #f8f9fa;
-        }
-
-        .name-cell {
-          color: #2c3e50;
-          font-weight: 500;
-        }
-
-        .email-cell {
-          color: #7f8c8d;
-          font-size: 13px;
-        }
-
-        .status-cell {
-          text-align: center;
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-          align-items: center;
-        }
-
-        .status-badge {
-          display: inline-block;
-          padding: 6px 12px;
-          border-radius: 4px;
-          font-size: 12px;
-          font-weight: 600;
-          white-space: nowrap;
-        }
-
-        .status-submitted {
-          background: #d4edda;
-          color: #155724;
-          border: 1px solid #c3e6cb;
-        }
-
-        .status-pending {
-          background: #fff3cd;
-          color: #856404;
-          border: 1px solid #ffeaa7;
-        }
-
-        .action-cell {
-          text-align: center;
-        }
-
-        .badge {
-          display: inline-block;
-          padding: 4px 8px;
-          border-radius: 4px;
-          font-size: 12px;
-          font-weight: 600;
-        }
-
-        .badge-admin {
-          background-color: #dc3545;
-          color: white;
-        }
-
-        .badge-teacher {
-          background-color: #007bff;
-          color: white;
-        }
-
-        .btn {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 6px;
-          border: none;
-          border-radius: 4px;
-          cursor: pointer;
-          font-weight: 600;
-        }
-
-        .btn-primary {
-          background-color: #007bff;
-          color: white;
-          padding: 10px 16px;
-        }
-
-        .btn-secondary {
-          background-color: #f1f3f5;
-          color: #2c3e50;
-          padding: 6px 10px;
-          border: 1px solid #d1d9e6;
-        }
-
-        .btn-xs {
-          font-size: 12px;
-          padding: 6px 10px;
-        }
-
-        .btn-sm {
-          background-color: #dc3545;
-          color: white;
-          border: none;
-          padding: 6px 12px;
-          border-radius: 4px;
-          cursor: pointer;
-          font-size: 12px;
-          font-weight: 500;
-          transition: all 0.2s;
-        }
-
-        .btn-danger {
-          background-color: #dc3545;
-          color: white;
-          border: none;
-        }
-
-        .btn-danger:hover:not(:disabled) {
-          background-color: #c82333;
-        }
-
-        .btn-danger:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-        }
-
-        .mono {
-          font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-          font-size: 13px;
-          color: #2c3e50;
-        }
-
-        .empty-state {
-          padding: 60px 20px;
-          text-align: center;
-          color: #7f8c8d;
-        }
-
-        .alert {
-          padding: 12px 14px;
-          border-radius: 6px;
-          margin-bottom: 16px;
-          font-weight: 600;
-        }
-
-        .alert-success {
-          background: #d4edda;
-          color: #155724;
-          border: 1px solid #c3e6cb;
-        }
-
-        .alert-error {
-          background: #f8d7da;
-          color: #721c24;
-          border: 1px solid #f5c6cb;
-        }
-
-        @media (max-width: 768px) {
-          .teachers-table {
-            font-size: 12px;
-          }
-
-          .teachers-table th,
-          .teachers-table td {
-            padding: 8px;
-          }
-
-          .page-header h1 {
-            font-size: 24px;
-          }
-
-          .page-header .subtitle {
-            font-size: 13px;
-          }
-        }
-      `}</style>
+      
     </DashboardLayout>
   );
 };

@@ -4,7 +4,9 @@ import {
   getMyAllocations,
   getSubjectsWithPreferences,
   allocateSubjects,
+  autoAllocate,
   deleteAllocation,
+  removeMultipleAllocations,
 } from '../controllers/allocationController.js';
 import { protect, authorize } from '../middleware/auth.js';
 
@@ -21,6 +23,10 @@ router
   .get(authorize('admin'), getSubjectsWithPreferences);
 
 router.route('/allocate').post(authorize('admin'), allocateSubjects);
+
+router.route('/auto-allocate/:formId').post(authorize('admin'), autoAllocate);
+
+router.route('/remove-multiple').post(authorize('admin'), removeMultipleAllocations);
 
 router.route('/:id').delete(authorize('admin'), deleteAllocation);
 

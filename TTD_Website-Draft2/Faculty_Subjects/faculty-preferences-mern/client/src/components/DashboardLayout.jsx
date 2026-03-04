@@ -29,7 +29,8 @@ const adminLinks = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin/teachers', label: 'Teachers', icon: Users },
   { href: '/admin/subjects', label: 'Subjects', icon: BookOpen },
-  { href: '/admin/preferences', label: 'Preferences', icon: BarChart3 },
+  { href: '/admin/preferences/forms', label: 'Preference Forms', icon: BarChart3 },
+  { href: '/admin/preferences', label: 'View Submissions', icon: BarChart3 },
   { href: '/admin/allocate', label: 'Allocate Subjects', icon: ListOrdered },
 ];
 

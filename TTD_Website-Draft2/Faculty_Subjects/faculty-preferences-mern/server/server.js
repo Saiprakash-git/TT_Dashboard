@@ -10,6 +10,7 @@ import subjectRoutes from './routes/subjects.js';
 import preferenceRoutes from './routes/preferences.js';
 import userRoutes from './routes/users.js';
 import allocationRoutes from './routes/allocations.js';
+import preferenceFormRoutes from './routes/preferenceForms.js';
 
 // Load env vars
 dotenv.config();
@@ -36,6 +37,7 @@ app.use(
 app.use('/api/auth', authRoutes);
 app.use('/api/subjects', subjectRoutes);
 app.use('/api/preferences', preferenceRoutes);
+app.use('/api/preference-forms', preferenceFormRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/allocations', allocationRoutes);
 

@@ -1,82 +1,149 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { DashboardLayout } from '../components/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '../components/ui/card';
+import { Badge } from '../components/ui/badge';
+import { ArrowLeft, BookOpen, Clock, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../utils/api';
 
 export default function PreferencesPage() {
   const { user } = useAuth();
-  const [subjects, setSubjects] = useState([]);
-  const [beTechPrefs, setBeTechPrefs] = useState(['', '', '']);
-  const [mTechPrefs, setMTechPrefs] = useState(['', '', '']);
-  const [pePrefs, setPePrefs] = useState(['', '', '']);
+  
+  // State
+  const [forms, setForms] = useState([]);
+  const [activeForm, setActiveForm] = useState(null);
+  const [formSubjects, setFormSubjects] = useState([]);
+  
+  // Saved Preferences state (Global per teacher for now, adapted for the form)
+  const [preferences, setPreferences] = useState({});
+  const [hasExisting, setHasExisting] = useState(false);
+  const [canEdit, setCanEdit] = useState(false);
+  const [globalExistingPreferences, setGlobalExistingPreferences] = useState([]);
+
+  // UI state
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [canEdit, setCanEdit] = useState(false);
-  const [hasExisting, setHasExisting] = useState(false);
 
   useEffect(() => {
-    fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    fetchInitialData();
   }, [user]);
 
-  const fetchData = async () => {
+  const fetchInitialData = async () => {
     try {
-      const [subjectsRes, preferencesRes, userRes] = await Promise.all([
-        api.get('/subjects'),
+      const [formsRes, prefsRes, userRes] = await Promise.all([
+        api.get('/preference-forms'),
         api.get('/preferences/my/preference'),
         api.get('/auth/me'),
       ]);
 
-      const allSubjects = subjectsRes.data.data || [];
-      setSubjects(allSubjects);
+      // Only show Active or Completed forms
+      const availableForms = (formsRes.data?.data || []).filter(f => f.status === 'active');
+      setForms(availableForms);
+
       setCanEdit(Boolean(userRes.data?.data?.canEditPreferences));
 
-      const pref = preferencesRes.data?.data;
-      if (pref?.preferences?.length) {
+      const prefData = prefsRes.data?.data;
+      if (prefData?.preferences?.length) {
         setHasExisting(true);
-        const be = ['', '', ''];
-        const m = ['', '', ''];
-        const pe = ['', '', ''];
-
-        pref.preferences.forEach((p) => {
-          const subjectId = typeof p.subject === 'string' ? p.subject : p.subject?._id;
-          if (p.program === 'B.E/B.Tech' && p.rank >= 1 && p.rank <= 3) {
-            be[p.rank - 1] = subjectId;
-          }
-          if (p.program === 'M.Tech' && p.rank >= 1 && p.rank <= 3) {
-            m[p.rank - 1] = subjectId;
-          }
-          if (p.program === 'Professional Elective' && p.rank >= 1 && p.rank <= 3) {
-            pe[p.rank - 1] = subjectId;
-          }
-        });
-
-        setBeTechPrefs(be);
-        setMTechPrefs(m);
-        setPePrefs(pe);
-      }
-      if (!pref?.preferences?.length) {
+        setGlobalExistingPreferences(prefData.preferences);
+      } else {
         setHasExisting(false);
+        setGlobalExistingPreferences([]);
       }
     } catch (err) {
-      console.error('Error loading preferences:', err);
+      console.error('Error loading data:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const filterAvailable = (program, prefs, currentIndex) => {
+  const handleSelectForm = (form) => {
+    setActiveForm(form);
+    
+    // Extract all subjects from the form payload
+    const allSubjects = [];
+    form.subjects.forEach(semGroup => {
+       allSubjects.push(...semGroup.subjectIds);
+    });
+    setFormSubjects(allSubjects);
+
+    // Hydrate existing preferences scoped to this form's subjects
+    const prefsMap = {};
+    if (globalExistingPreferences.length > 0) {
+      globalExistingPreferences.forEach((p) => {
+        const subjectId = typeof p.subject === 'string' ? p.subject : p.subject?._id;
+        const subjectObj = allSubjects.find(s => s._id === subjectId);
+        
+        if (subjectObj) {
+          // Group by program + semesterNumber, fallback to Uncategorized if none
+          const semNumKey = subjectObj.semesterNumber ? `Sem ${subjectObj.semesterNumber}` : 'Uncategorized';
+          const key = subjectObj.professionalElective 
+            ? `PE` 
+            : `${subjectObj.program}|${semNumKey}`;
+          
+          if (!prefsMap[key]) {
+            prefsMap[key] = Array(activeForm?.preferencesPerSemester || 3).fill('');
+          }
+          if (p.rank >= 1 && p.rank <= (activeForm?.preferencesPerSemester || 3)) {
+            prefsMap[key][p.rank - 1] = subjectId;
+          }
+        }
+      });
+    }
+    setPreferences(prefsMap);
+  };
+
+  const clearSelection = () => {
+    setActiveForm(null);
+    setFormSubjects([]);
+    setPreferences({});
+    // Re-fetch to ensure sync when going back to list
+    setLoading(true);
+    fetchInitialData();
+  };
+
+  // Group forms by Program and then Semesters dynamically
+  const getPrograms = () => {
+    const programs = new Set();
+    formSubjects.forEach((s) => {
+      if (!s.professionalElective) {
+        programs.add(s.program);
+      }
+    });
+    return Array.from(programs);
+  };
+
+  const getSemesterNumbersForProgram = (program) => {
+    const sems = new Set();
+    formSubjects.forEach((s) => {
+      if (s.program === program && !s.professionalElective) {
+        sems.add(s.semesterNumber ? `Sem ${s.semesterNumber}` : 'Uncategorized');
+      }
+    });
+    // Sort logic, ensuring Uncategorized goes to the end
+    return Array.from(sems).sort((a, b) => {
+      if (a === 'Uncategorized') return 1;
+      if (b === 'Uncategorized') return -1;
+      return a.localeCompare(b);
+    });
+  };
+
+  const filterAvailable = (program, semesterNumKey, prefs, currentIndex) => {
     const selected = prefs.filter((id, i) => i !== currentIndex && id);
-    return subjects.filter((s) => {
-      // For Professional Elective section: show only PE subjects regardless of program
-      if (program === 'Professional Elective') {
+    return formSubjects.filter((s) => {
+      if (semesterNumKey === 'PE') {
         return s.professionalElective === true && !selected.includes(s._id);
       }
-      // For regular program sections: show only non-PE subjects matching the program
-      return s.program === program && s.professionalElective !== true && !selected.includes(s._id);
+      
+      const sNumKey = s.semesterNumber ? `Sem ${s.semesterNumber}` : 'Uncategorized';
+      return (
+        s.program === program &&
+        sNumKey === semesterNumKey &&
+        s.professionalElective !== true &&
+        !selected.includes(s._id)
+      );
     });
   };
 
@@ -86,33 +153,67 @@ export default function PreferencesPage() {
       return;
     }
 
-    const preferences = [];
-    beTechPrefs.forEach((subjectId, index) => {
-      if (subjectId) {
-        preferences.push({ subject: subjectId, program: 'B.E/B.Tech', rank: index + 1 });
+    const allPreferences = [];
+    
+    // We must merge with global existing preferences that ARE NOT in this form. 
+    // To do this, we collect everything from the local state mapping:
+    Object.entries(preferences).forEach(([key, prefs]) => {
+      let program, semesterNumKey;
+      
+      if (key === 'PE') {
+        program = 'Professional Elective';
+        semesterNumKey = 'PE';
+      } else {
+        [program, semesterNumKey] = key.split('|');
       }
-    });
-    mTechPrefs.forEach((subjectId, index) => {
-      if (subjectId) {
-        preferences.push({ subject: subjectId, program: 'M.Tech', rank: index + 1 });
-      }
-    });
-    pePrefs.forEach((subjectId, index) => {
-      if (subjectId) {
-        preferences.push({ subject: subjectId, program: 'Professional Elective', rank: index + 1 });
-      }
+
+      prefs.forEach((subjectId, index) => {
+        if (subjectId) {
+          const sObj = formSubjects.find(s => s._id === subjectId);
+          allPreferences.push({
+            subject: subjectId,
+            program: sObj ? sObj.program : program,
+            semester: semesterNumKey, 
+            rank: index + 1,
+          });
+        }
+      });
     });
 
-    if (preferences.length < 3) {
-      toast.error('Please select at least 3 preferences in total.');
-      return;
-    }
+    // Add back global preferences that aren't part of this form's subject lists
+    const formSubjectIds = formSubjects.map(s => s._id.toString());
+    globalExistingPreferences.forEach(p => {
+      const subjectIdStr = (typeof p.subject === 'string' ? p.subject : p.subject?._id).toString();
+      if (!formSubjectIds.includes(subjectIdStr)) {
+        allPreferences.push({
+          subject: subjectIdStr,
+          program: p.program,
+          semester: p.semester,
+          rank: p.rank
+        });
+      }
+    });
 
     setIsSaving(true);
     try {
-      await api.post('/preferences', { preferences });
-      toast.success('Preferences saved successfully');
-      fetchData();
+      // 1. Save global preferences
+      await api.post('/preferences', { preferences: allPreferences });
+      
+      // 2. Mark this teacher as submitted for this specific form
+      if (activeForm) {
+        await api.post(`/preference-forms/${activeForm._id}/mark-submitted`, {
+          teacherId: user.id
+        });
+      }
+
+      toast.success('Preferences saved successfully!');
+      
+      // Re-fetch everything
+      await fetchInitialData();
+      
+      // Re-hydrate the current view
+      handleSelectForm(activeForm);
+
     } catch (err) {
       console.error(err);
       toast.error(err.response?.data?.message || 'Failed to save preferences');
@@ -121,80 +222,281 @@ export default function PreferencesPage() {
     }
   };
 
-  const programSection = (title, programKey, prefs, setter) => (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>Select up to three ranked preferences</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {[0, 1, 2].map((idx) => (
-          <div key={`${programKey}-${idx}`} className="space-y-2">
-            <label className="text-sm font-medium text-foreground/80">
-              {idx === 0 ? '1st Preference' : idx === 1 ? '2nd Preference' : '3rd Preference'}
-            </label>
-            <select
-              className="w-full border rounded-md px-3 py-2 text-sm"
-              value={prefs[idx]}
-              onChange={(e) => {
-                const next = [...prefs];
-                next[idx] = e.target.value;
-                setter(next);
-              }}
-              disabled={disableEditing}
-            >
-              <option value="">-- Select Subject --</option>
-              {filterAvailable(programKey, prefs, idx).map((subject) => (
-                <option key={subject._id} value={subject._id}>
-                  {subject.code} - {subject.name} ({subject.credits} cr)
-                </option>
-              ))}
-            </select>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
-  );
+  const disableEditing = hasExisting && !canEdit;
 
+  // RENDERERS
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="flex items-center justify-center h-64 text-muted-foreground">
-          Loading preferences...
+        <div className="flex items-center justify-center h-64 text-muted-foreground animate-pulse">
+          Loading active forms...
         </div>
       </DashboardLayout>
     );
   }
 
-  const beTechSubjects = subjects.some((s) => s.program === 'B.E/B.Tech');
-  const mTechSubjects = subjects.some((s) => s.program === 'M.Tech');
-  const peSubjects = subjects.some((s) => s.professionalElective === true);
-  const disableEditing = hasExisting && !canEdit;
+  // LIST VIEW: Showing all active forms
+  if (!activeForm) {
+    return (
+      <DashboardLayout>
+        <div className="max-w-6xl mx-auto space-y-6 animate-fade-in pb-12">
+          <div className="space-y-1">
+            <h1 className="text-3xl font-bold tracking-tight text-slate-800">Available Preference Forms</h1>
+            <p className="text-muted-foreground">Select a form below to submit your top choices for upcoming semesters.</p>
+          </div>
+
+          {forms.length === 0 ? (
+            <Card className="border-dashed border-2 bg-slate-50 border-slate-200">
+              <CardContent className="flex flex-col items-center justify-center py-24">
+                <AlertCircle className="w-12 h-12 text-slate-300 mb-4" />
+                <h3 className="text-xl font-medium text-slate-700 mb-1">No Active Forms</h3>
+                <p className="text-slate-500 mb-0">There are currently no open preference forms to submit.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
+              {forms.map(form => {
+                const hasSubmitted = form.submittedTeachers?.some(t => {
+                   const tid = typeof t === 'string' ? t : t._id;
+                   return tid === user.id;
+                });
+                
+                return (
+                  <Card key={form._id} className="hover:border-indigo-300 transition-all hover:shadow-md cursor-pointer flex flex-col h-full" onClick={() => {
+                    if (hasSubmitted) {
+                      if (!window.confirm("You have already submitted preferences for this form. Do you want to proceed to view/edit your submission?")) {
+                        return;
+                      }
+                    }
+                    handleSelectForm(form);
+                  }}>
+                    <div className="h-1.5 w-full bg-indigo-500 rounded-t-xl" />
+                    <CardHeader className="pb-4">
+                      <div className="flex justify-between items-start mb-2">
+                         <Badge className={hasSubmitted ? "bg-emerald-100 text-emerald-800" : "bg-blue-100 text-blue-800"}>
+                           {hasSubmitted ? "✅ Submitted" : "Pending Action"}
+                         </Badge>
+                      </div>
+                      <CardTitle className="text-xl leading-tight text-slate-800">{form.name}</CardTitle>
+                      {form.description && (
+                        <CardDescription className="line-clamp-2 mt-2 min-h-[40px]">
+                          {form.description}
+                        </CardDescription>
+                      )}
+                    </CardHeader>
+                    <CardContent className="flex-grow space-y-3">
+                       <div className="flex justify-between items-center bg-slate-50 p-3 rounded-lg border border-slate-100">
+                          <span className="text-sm font-medium text-slate-500">Semesters Included:</span>
+                          <span className="font-semibold text-slate-700">{form.includedSemesters.join(' & ')}</span>
+                       </div>
+                    </CardContent>
+                    <CardFooter className="pt-0 pb-5">
+                       <Button className="w-full bg-slate-900 shadow-sm" onClick={(e) => {
+                         e.stopPropagation();
+                         if (hasSubmitted) {
+                           if (!window.confirm("You have already submitted preferences for this form. Do you want to proceed to view/edit your submission?")) {
+                             return;
+                           }
+                         }
+                         handleSelectForm(form);
+                       }}>
+                         {hasSubmitted ? 'View / Edit Submission' : 'Start Preferences'}
+                       </Button>
+                    </CardFooter>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  // DETAIL VIEW: Filling out a specific form
+  const programs = getPrograms();
 
   return (
     <DashboardLayout>
-      <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold" style={{fontFamily: 'Poppins, sans-serif', letterSpacing: '-0.02em'}}>Submit Preferences</h1>
-            <p className="text-muted-foreground">Pick up to three per program; minimum three total.</p>
+      <div className="max-w-6xl mx-auto space-y-6 animate-fade-in pb-12">
+        
+        {/* Header Ribbon */}
+        <div className="flex items-center space-x-4">
+          <Button variant="outline" size="icon" onClick={clearSelection} className="h-10 w-10 shrink-0 rounded-full border-slate-200">
+            <ArrowLeft className="w-5 h-5 text-slate-600" />
+          </Button>
+          <div className="flex-grow">
+            <Badge className="bg-indigo-100 text-indigo-800 hover:bg-indigo-100 mb-2 border-none">Active Form</Badge>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-800">{activeForm.name}</h1>
           </div>
-          <Button onClick={handleSave} disabled={isSaving || disableEditing}>
-            {isSaving ? 'Saving...' : 'Save Preferences'}
+          <Button 
+            onClick={handleSave} 
+            disabled={isSaving || disableEditing}
+            className="hidden md:flex bg-indigo-600 hover:bg-indigo-700 h-11 px-8 shadow-sm font-medium"
+          >
+            {isSaving ? 'Saving Form...' : 'Submit Final Preferences'}
           </Button>
         </div>
 
+        {/* Warning card if disableEditing is true */}
         {disableEditing && (
-          <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            You cannot edit preferences right now. Please contact the admin to enable editing.
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800 shadow-sm flex items-start space-x-3">
+            <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+            <div>
+              <strong>Editing is currently locked.</strong> You have already submitted preferences. If you need to make changes, please contact your administrator to explicitly enable your edit access.
+            </div>
           </div>
         )}
 
-        <div className="grid gap-4 md:grid-cols-2">
-          {beTechSubjects && programSection('B.E/B.Tech Program', 'B.E/B.Tech', beTechPrefs, setBeTechPrefs)}
-          {mTechSubjects && programSection('M.Tech Program', 'M.Tech', mTechPrefs, setMTechPrefs)}
-          {peSubjects && programSection('Professional Electives', 'Professional Elective', pePrefs, setPePrefs)}
+        {/* Form Meta Details */}
+        <div className="grid md:grid-cols-3 gap-4">
+           {activeForm.description && (
+            <Card className="md:col-span-3 bg-white shadow-sm border-slate-200">
+              <CardContent className="p-5 text-slate-600">
+                 {activeForm.description}
+              </CardContent>
+            </Card>
+           )}
+           <Card className="bg-slate-50 border-slate-200 shadow-none">
+             <CardContent className="p-5 flex items-center">
+                <CheckCircle2 className="w-8 h-8 text-indigo-400 mr-4 shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-slate-500">Choices Per Semester</p>
+                  <p className="text-xl font-bold text-slate-800">{activeForm.preferencesPerSemester}</p>
+                </div>
+             </CardContent>
+           </Card>
+           <Card className="bg-slate-50 border-slate-200 shadow-none">
+             <CardContent className="p-5 flex items-center">
+                <Clock className="w-8 h-8 text-indigo-400 mr-4 shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-slate-500">Allocation Type</p>
+                  <p className="text-xl font-bold text-slate-800 capitalize">{activeForm.allocationMethod}</p>
+                </div>
+             </CardContent>
+           </Card>
         </div>
+
+        <div className="py-2 border-b border-slate-200" />
+
+        {formSubjects.length === 0 ? (
+          <Card className="border-dashed bg-slate-50">
+            <CardContent className="py-20 text-center">
+              <BookOpen className="w-10 h-10 mx-auto text-slate-300 mb-3" />
+              <p className="text-lg font-medium text-slate-600">No subjects assigned</p>
+              <p className="text-sm text-slate-500">The administrator hasn't added any subjects to this form yet.</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-6 md:grid-cols-2">
+            {programs.map((program) => {
+              const semesterNumKeys = getSemesterNumbersForProgram(program);
+              
+              return semesterNumKeys.map((semesterNumKey) => {
+                const key = `${program}|${semesterNumKey}`;
+                const prefs = preferences[key] || Array(activeForm.preferencesPerSemester || 3).fill('');
+                
+                return (
+                  <Card key={key} className="border-slate-200 shadow-sm overflow-hidden">
+                    <div className="bg-slate-50 px-5 py-4 border-b border-slate-100 flex justify-between items-center">
+                      <CardTitle className="text-base font-semibold text-slate-800">
+                        {program} &nbsp;—&nbsp; <span className="text-indigo-600">{semesterNumKey}</span>
+                      </CardTitle>
+                    </div>
+                    <CardContent className="p-5 space-y-4">
+                      {Array.from({ length: activeForm.preferencesPerSemester || 3 }).map((_, idx) => (
+                        <div key={`${key}-${idx}`} className="space-y-1.5">
+                          <label className="text-sm font-medium text-slate-600 flex items-center">
+                            <span className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center text-xs font-bold mr-2 border border-indigo-100">
+                              {idx + 1}
+                            </span>
+                            {idx === 0 ? 'Top Preference' : idx === 1 ? '2nd Choice' : idx === 2 ? '3rd Choice' : `${idx + 1}th Choice`}
+                          </label>
+                          <select
+                            className="w-full border-slate-200 rounded-md px-3 py-2.5 text-sm bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 shadow-sm disabled:bg-slate-50 disabled:text-slate-500 transition-colors"
+                            value={prefs[idx] || ''}
+                            onChange={(e) => {
+                              const next = [...prefs];
+                              next[idx] = e.target.value;
+                              setPreferences({ ...preferences, [key]: next });
+                            }}
+                            disabled={disableEditing}
+                          >
+                            <option value="">-- Select a Subject --</option>
+                            {filterAvailable(program, semesterNumKey, prefs, idx).map((subject) => (
+                              <option key={subject._id} value={subject._id}>
+                                {subject.code} - {subject.name} ({subject.credits} cr)
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                );
+              });
+            })}
+
+            {/* Professional Electives Block */}
+            {(() => {
+              const hasPE = formSubjects.some((s) => s.professionalElective === true);
+              if (!hasPE) return null;
+
+              const prefs = preferences['PE'] || Array(activeForm.preferencesPerSemester || 3).fill('');
+
+              return (
+                <Card className="border-emerald-200 shadow-sm overflow-hidden">
+                  <div className="bg-emerald-50 px-5 py-4 border-b border-emerald-100 flex justify-between items-center">
+                    <CardTitle className="text-base font-semibold text-emerald-800">
+                      Professional Electives
+                    </CardTitle>
+                  </div>
+                  <CardContent className="p-5 space-y-4">
+                    {Array.from({ length: activeForm.preferencesPerSemester || 3 }).map((_, idx) => (
+                      <div key={`PE-${idx}`} className="space-y-1.5">
+                        <label className="text-sm font-medium text-slate-600 flex items-center">
+                          <span className="flex-shrink-0 w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xs font-bold mr-2 border border-emerald-200">
+                            {idx + 1}
+                          </span>
+                          {idx === 0 ? 'Top Preference' : idx === 1 ? '2nd Choice' : idx === 2 ? '3rd Choice' : `${idx + 1}th Choice`}
+                        </label>
+                        <select
+                          className="w-full border-slate-200 rounded-md px-3 py-2.5 text-sm bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 shadow-sm disabled:bg-slate-50 disabled:text-slate-500 transition-colors"
+                          value={prefs[idx] || ''}
+                          onChange={(e) => {
+                            const next = [...prefs];
+                            next[idx] = e.target.value;
+                            setPreferences({ ...preferences, 'PE': next });
+                          }}
+                          disabled={disableEditing}
+                        >
+                          <option value="">-- Select an Elective --</option>
+                          {filterAvailable('PE', 'PE', prefs, idx).map((subject) => (
+                            <option key={subject._id} value={subject._id}>
+                              {subject.code} - {subject.name} ({subject.credits} cr)
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* Mobile Save Button */}
+        <div className="md:hidden mt-8">
+           <Button 
+              onClick={handleSave} 
+              disabled={isSaving || disableEditing}
+              className="w-full py-6 text-lg bg-indigo-600 hover:bg-indigo-700 shadow-md font-medium"
+            >
+              {isSaving ? 'Saving Form...' : 'Submit Final Preferences'}
+            </Button>
+        </div>
+
       </div>
     </DashboardLayout>
   );

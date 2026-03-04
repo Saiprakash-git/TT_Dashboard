@@ -92,9 +92,30 @@ const AllocateSubjectsPage = () => {
     );
   }
 
-  // Group subjects by program
-  const beTechSubjects = subjects.filter(s => s.program === 'B.E/B.Tech');
-  const mTechSubjects = subjects.filter(s => s.program === 'M.Tech');
+  // Group subjects by program AND semester
+  const groupedSubjects = {};
+  subjects.forEach((subject) => {
+    const semester = subject.semester || 'Unassigned';
+    const program = subject.program;
+    const key = `${program}|${semester}`;
+
+    if (!groupedSubjects[key]) {
+      groupedSubjects[key] = {
+        program,
+        semester,
+        subjects: [],
+      };
+    }
+    groupedSubjects[key].subjects.push(subject);
+  });
+
+  // Sort by program, then by semester
+  const sortedGroups = Object.values(groupedSubjects).sort((a, b) => {
+    const programOrder = { 'B.E/B.Tech': 0, 'M.Tech': 1 };
+    const programCompare = (programOrder[a.program] || 2) - (programOrder[b.program] || 2);
+    if (programCompare !== 0) return programCompare;
+    return (a.semester || '').localeCompare(b.semester || '');
+  });
 
   const lockedCount = Object.keys(lockedAllocations).length;
   const needsAllocation = subjects.filter((s) => !lockedAllocations[s._id]);
@@ -132,11 +153,13 @@ const AllocateSubjectsPage = () => {
           </div>
         </div>
 
-        {beTechSubjects.length > 0 && (
-          <div className="program-section">
-            <h2 className="program-title">📘 B.E/B.Tech Subjects ({beTechSubjects.length})</h2>
+        {sortedGroups.map((group) => (
+          <div key={`${group.program}|${group.semester}`} className="program-section">
+            <h2 className="program-title">
+              {group.program === 'B.E/B.Tech' ? '📘' : '📗'} {group.program} - {group.semester} ({group.subjects.length})
+            </h2>
             <div className="subjects-grid">
-              {beTechSubjects.map((subject) => (
+              {group.subjects.map((subject) => (
                 <SubjectCard
                   key={subject._id}
                   subject={subject}
@@ -148,25 +171,7 @@ const AllocateSubjectsPage = () => {
               ))}
             </div>
           </div>
-        )}
-
-        {mTechSubjects.length > 0 && (
-          <div className="program-section">
-            <h2 className="program-title">📗 M.Tech Subjects ({mTechSubjects.length})</h2>
-            <div className="subjects-grid">
-              {mTechSubjects.map((subject) => (
-                <SubjectCard
-                  key={subject._id}
-                  subject={subject}
-                  selectedTeacher={pendingAllocations[subject._id] || lockedAllocations[subject._id]?.teacherId}
-                  lockedTeacher={lockedAllocations[subject._id]?.teacherId}
-                  lockedTeacherName={lockedAllocations[subject._id]?.teacherName}
-                  onTeacherSelect={(teacherId) => handleTeacherSelect(subject._id, teacherId)}
-                />
-              ))}
-            </div>
-          </div>
-        )}
+        ))}
 
         <style>{`
           .allocate-container {

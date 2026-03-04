@@ -1,6 +1,7 @@
 import Allocation from '../models/Allocation.js';
 import Subject from '../models/Subject.js';
 import Preference from '../models/Preference.js';
+import PreferenceForm from '../models/PreferenceForm.js';
 
 // @desc    Get all allocations
 // @route   GET /api/allocations
@@ -110,30 +111,7 @@ export const allocateSubjects = async (req, res, next) => {
 
     const existing = await Allocation.find({ academicYear: year });
 
-    // Get all subjects to ensure all are allocated
-    const allSubjects = await Subject.find();
-    const allSubjectIds = allSubjects.map((s) => String(s._id));
-    const alreadyAllocatedIds = new Set(existing.map((e) => String(e.subject)));
-    const unallocatedSubjectIds = allSubjectIds.filter((id) => !alreadyAllocatedIds.has(id));
-
-    // When everything is already allocated for the year, block further changes
-    if (existing.length && unallocatedSubjectIds.length === 0) {
-      return res.status(409).json({
-        success: false,
-        message: `Allocations for ${year} are already finalized and cannot be changed`,
-      });
-    }
-
-    // For the first run, require all subjects. For subsequent runs, require all remaining subjects.
-    const requiredCount = existing.length ? unallocatedSubjectIds.length : allSubjects.length;
-    if (allocations.length !== requiredCount) {
-      return res.status(400).json({
-        success: false,
-        message: existing.length
-          ? 'Please allocate all newly added subjects to finalize the year'
-          : 'All subjects must be allocated before submission',
-      });
-    }
+    // Removed logic that required all subjects to be allocated simultaneously
 
     const seenSubjects = new Set();
     for (const alloc of allocations) {
@@ -150,16 +128,10 @@ export const allocateSubjects = async (req, res, next) => {
           message: 'Each subject can only be allocated once per academic year',
         });
       }
-      if (alreadyAllocatedIds.has(subjectId)) {
+      if (existing.some((e) => String(e.subject) === subjectId)) {
         return res.status(409).json({
           success: false,
           message: 'Cannot change subjects that are already allocated for this academic year',
-        });
-      }
-      if (existing.length && !unallocatedSubjectIds.includes(subjectId)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Only newly added subjects can be allocated now',
         });
       }
       seenSubjects.add(subjectId);
@@ -193,14 +165,169 @@ export const allocateSubjects = async (req, res, next) => {
   }
 };
 
+// @desc    Automatic allocation based on preferences
+// @route   POST /api/allocations/auto-allocate/:formId
+// @access  Private/Admin
+export const autoAllocate = async (req, res, next) => {
+  try {
+    const { formId } = req.params;
+    const { academicYear } = req.body;
+
+    // Get the preference form
+    const form = await PreferenceForm.findById(formId).populate('subjects.subjectIds');
+    if (!form) {
+      return res.status(404).json({
+        success: false,
+        message: 'Preference form not found',
+      });
+    }
+
+    // Get all subjects in this form
+    const subjectIds = form.subjects.flatMap(s => s.subjectIds.map(sub => sub._id || sub));
+
+    // Get all preferences for these subjects
+    const preferences = await Preference.find({
+      'preferences.subject': { $in: subjectIds },
+    }).populate('teacher', 'fullName facultyId email');
+
+    if (preferences.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No preferences found for this form',
+      });
+    }
+
+    const allocations = [];
+    const allocatedSubjects = new Set();
+    const allocatedTeachers = new Map(); // Track what teachers have been allocated to prevent duplicates in same semester
+
+    // Process each subject
+    for (const subjectId of subjectIds) {
+      // Find the subject to get its semester
+      const subject = await Subject.findById(subjectId);
+      if (!subject) continue;
+
+      // Get all preferences for this subject, sorted by preference order (1st, 2nd, 3rd)
+      const subjectPreferences = [];
+
+      preferences.forEach(pref => {
+        pref.preferences.forEach(p => {
+          if (p.subject.toString() === subjectId.toString()) {
+            subjectPreferences.push({
+              teacher: pref.teacher,
+              subject: p.subject,
+              preferenceOrder: p.preferenceOrder,
+            });
+          }
+        });
+      });
+
+      // Sort by preference order (1st preference = highest priority)
+      subjectPreferences.sort((a, b) => a.preferenceOrder - b.preferenceOrder);
+
+      // Find the best teacher for this subject
+      let allocatedTeacher = null;
+      for (const pref of subjectPreferences) {
+        const teacherId = pref.teacher._id.toString();
+        const semesterKey = `${subject.semester}-${teacherId}`;
+
+        const teacherAllocCount = allocations.filter(alloc => {
+          const allocSubject = form.subjects
+            .flatMap(s => s.subjectIds)
+            .find(sub => sub._id.toString() === alloc.subject.toString());
+          
+          return alloc.teacher.toString() === teacherId && 
+                 allocSubject && allocSubject.semester === subject.semester;
+        }).length;
+
+        const maxSubjects = form.maxSubjectsPerTeacher || 1;
+
+        if (teacherAllocCount < maxSubjects) {
+          allocatedTeacher = pref.teacher;
+          break;
+        }
+      }
+
+      // If a teacher was found, allocate
+      if (allocatedTeacher) {
+        allocations.push({
+          subject: subjectId,
+          teacher: allocatedTeacher._id,
+          allocatedBy: req.user._id,
+          academicYear: academicYear || `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`,
+        });
+        allocatedSubjects.add(subjectId.toString());
+      }
+    }
+
+    // Save allocations
+    const savedAllocations = await Allocation.insertMany(allocations);
+
+    // Update preference form with allocations
+    form.allocations = savedAllocations.map(a => a._id);
+    await form.save();
+
+    // Populate and return results
+    const result = await Allocation.find({ _id: { $in: savedAllocations.map(a => a._id) } })
+      .populate('subject', 'name code semester')
+      .populate('teacher', 'fullName facultyId email')
+      .populate('allocatedBy', 'fullName');
+
+    res.status(201).json({
+      success: true,
+      message: `Automatic allocation completed. ${allocations.length} subjects allocated.`,
+      allocatedCount: allocations.length,
+      data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // @desc    Delete allocation
 // @route   DELETE /api/allocations/:id
 // @access  Private/Admin
 export const deleteAllocation = async (req, res, next) => {
   try {
-    return res.status(403).json({
-      success: false,
-      message: 'Allocations are permanent and cannot be deleted',
+    const allocation = await Allocation.findById(req.params.id);
+    if (!allocation) {
+      return res.status(404).json({
+        success: false,
+        message: 'Allocation not found',
+      });
+    }
+
+    await allocation.deleteOne();
+
+    res.status(200).json({
+      success: true,
+      data: {},
+      message: 'Allocation removed'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Remove multiple allocations by subject ID
+// @route   POST /api/allocations/remove-multiple
+// @access  Private/Admin
+export const removeMultipleAllocations = async (req, res, next) => {
+  try {
+    const { subjectIds } = req.body;
+    
+    if (!subjectIds || !Array.isArray(subjectIds) || subjectIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No subject IDs provided',
+      });
+    }
+
+    const result = await Allocation.deleteMany({ subject: { $in: subjectIds } });
+
+    res.status(200).json({
+      success: true,
+      message: `${result.deletedCount} allocations removed successfully`,
     });
   } catch (error) {
     next(error);
