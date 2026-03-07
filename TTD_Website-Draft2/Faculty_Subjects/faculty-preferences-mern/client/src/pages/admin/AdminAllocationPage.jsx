@@ -5,7 +5,8 @@ import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
-import { Target, ArrowLeft, Bot, UserIcon, Trash2, CheckCircle2 } from 'lucide-react';
+import { Target, ArrowLeft, Bot, UserIcon, Trash2, CheckCircle2, Download } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 const AdminAllocationPage = () => {
   const [forms, setForms] = useState([]);
@@ -169,6 +170,30 @@ const AdminAllocationPage = () => {
     }
   };
 
+  const handleExportExcel = () => {
+    if (!selectedForm) return;
+
+    const exportData = getFormSubjects().map(subject => {
+      const allocatedTeacher = getAllocatedTeacher(subject._id);
+      return {
+        'Subject Code': subject.code,
+        'Subject Name': subject.name,
+        'Semester': subject.semester,
+        'Credits': subject.credits,
+        'Allocated Teacher Name': allocatedTeacher ? allocatedTeacher.fullName : 'Not Allocated',
+        'Teacher Email': allocatedTeacher ? allocatedTeacher.email : 'N/A',
+        'Teacher Department': allocatedTeacher ? allocatedTeacher.department : 'N/A',
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Allocations');
+    
+    // Generate buffer and open download dialog
+    XLSX.writeFile(workbook, `${selectedForm.name.replace(/[^a-zA-Z0-9]/g, '_')}_Allocations.xlsx`);
+  };
+
   if (loading) {
     return (
       <DashboardLayout>
@@ -212,34 +237,61 @@ const AdminAllocationPage = () => {
               </Card>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {forms.map(form => (
-                  <Card key={form._id} className="hover:shadow-md transition-shadow border-slate-200">
-                    <CardHeader className="pb-4 border-b bg-slate-50/50">
-                      <div className="flex justify-between items-start gap-4">
-                        <CardTitle className="text-lg line-clamp-1">{form.name}</CardTitle>
-                        <Badge variant="outline" className={form.allocationMethod === 'automatic' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-slate-100 text-slate-700 border-slate-200'}>
-                          {form.allocationMethod === 'automatic' ? <><Bot className="w-3 h-3 mr-1"/> Auto</> : <><UserIcon className="w-3 h-3 mr-1"/> Manual</>}
-                        </Badge>
-                      </div>
-                      <CardDescription className="line-clamp-2">{form.description || 'No description provided'}</CardDescription>
-                    </CardHeader>
-                    <CardContent className="pt-4 space-y-4">
-                      <div className="grid grid-cols-2 gap-2 text-sm">
-                        <div className="bg-slate-50 p-2 rounded-md border text-center">
-                          <p className="text-slate-500 text-xs">Status</p>
-                          <p className="font-semibold text-slate-700 capitalize">{form.status}</p>
+                {forms.map(form => {
+                  const subjectIdsInForm = form.subjects?.flatMap(s => s.subjectIds.map(sub => sub._id || sub)) || [];
+                  const countAllocated = allocations.filter(a => {
+                    const aSubjectId = a.subject?._id || a.subject;
+                    return subjectIdsInForm.includes(aSubjectId);
+                  }).length;
+                  const totalSubjects = subjectIdsInForm.length;
+                  const isComplete = totalSubjects > 0 && countAllocated >= totalSubjects;
+
+                  return (
+                    <Card key={form._id} className="hover:shadow-md transition-shadow border-slate-200">
+                      <CardHeader className="pb-4 border-b bg-slate-50/50">
+                        <div className="flex justify-between items-start gap-4">
+                          <CardTitle className="text-lg line-clamp-1">{form.name}</CardTitle>
+                          <Badge variant="outline" className={form.allocationMethod === 'automatic' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-slate-100 text-slate-700 border-slate-200'}>
+                            {form.allocationMethod === 'automatic' ? <><Bot className="w-3 h-3 mr-1"/> Auto</> : <><UserIcon className="w-3 h-3 mr-1"/> Manual</>}
+                          </Badge>
                         </div>
-                        <div className="bg-slate-50 p-2 rounded-md border text-center">
-                          <p className="text-slate-500 text-xs">Responses</p>
-                          <p className="font-semibold text-slate-700">{form.submittedTeachers?.length || 0}</p>
+                        <CardDescription className="line-clamp-2">{form.description || 'No description provided'}</CardDescription>
+                      </CardHeader>
+                      <CardContent className="pt-4 space-y-4">
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                          <div className="bg-slate-50 p-2 rounded-md border text-center">
+                            <p className="text-slate-500 text-xs">Status</p>
+                            <p className="font-semibold text-slate-700 capitalize">{form.status}</p>
+                          </div>
+                          <div className="bg-slate-50 p-2 rounded-md border text-center">
+                            <p className="text-slate-500 text-xs">Responses</p>
+                            <p className="font-semibold text-slate-700">{form.submittedTeachers?.length || 0}</p>
+                          </div>
                         </div>
-                      </div>
-                      <Button className="w-full" onClick={() => handleSelectForm(form)}>
-                        Proceed to Allocation →
-                      </Button>
-                    </CardContent>
-                  </Card>
-                ))}
+                        
+                        {isComplete ? (
+                          <Button 
+                            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" 
+                            onClick={() => handleSelectForm(form)}
+                          >
+                            <CheckCircle2 className="w-4 h-4 mr-2" /> View Allocations
+                          </Button>
+                        ) : (
+                          <Button 
+                            className="w-full bg-amber-600 hover:bg-amber-700 text-white" 
+                            onClick={() => handleSelectForm(form)}
+                          >
+                            Incomplete Allocations →
+                          </Button>
+                        )}
+                        
+                        <div className="text-center text-xs text-slate-500 mt-2">
+                          {countAllocated} / {totalSubjects} Subjects Allocated
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -256,32 +308,7 @@ const AdminAllocationPage = () => {
               </Badge>
             </div>
 
-            {selectedForm.allocationMethod === 'automatic' && (
-              <Card className="border-indigo-200 shadow-sm bg-gradient-to-r from-indigo-50/50 to-white">
-                <CardContent className="p-6 flex flex-col md:flex-row items-center gap-6">
-                  <div className="flex-1">
-                    <h3 className="text-lg font-bold text-indigo-900 mb-2 flex items-center">
-                      <Bot className="w-5 h-5 mr-2 text-indigo-600" /> Automatic Smart Allocation
-                    </h3>
-                    <p className="text-slate-600 text-sm mb-4">The system will assign each subject to the teacher with the highest preference ranking automatically based on available data.</p>
-                    <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-slate-700 font-medium">
-                      <li className="flex items-center"><CheckCircle2 className="w-4 h-4 mr-2 text-emerald-500"/> Respects subject preference order</li>
-                      <li className="flex items-center"><CheckCircle2 className="w-4 h-4 mr-2 text-emerald-500"/> Respects Max Subjects Limit</li>
-                      <li className="flex items-center"><CheckCircle2 className="w-4 h-4 mr-2 text-emerald-500"/> Fair distribution algorithm</li>
-                      <li className="flex items-center"><CheckCircle2 className="w-4 h-4 mr-2 text-emerald-500"/> Prevents subject duplication</li>
-                    </ul>
-                  </div>
-                  <Button 
-                    size="lg" 
-                    onClick={handleAutoAllocate} 
-                    disabled={autoAllocating}
-                    className="w-full md:w-auto bg-indigo-600 hover:bg-indigo-700 text-white shadow-md text-sm md:text-base whitespace-nowrap"
-                  >
-                    {autoAllocating ? '⏳ Processing Algorithm...' : '▶️ Run Auto-Allocation Now'}
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
+
 
             {selectedForm.allocationMethod === 'manual' && (
               <div className="p-4 bg-amber-50 rounded-lg border border-amber-200 flex items-start gap-4">
@@ -327,8 +354,19 @@ const AdminAllocationPage = () => {
 
             {/* Subjects Allocation Table */}
             <Card className="border-slate-200 shadow-sm">
-              <CardHeader className="bg-white border-b px-6 py-4">
+              <CardHeader className="bg-white border-b px-6 py-4 flex flex-row items-center justify-between">
                 <CardTitle className="text-lg">Allocation Manifest</CardTitle>
+                {(() => {
+                  const subjectIdsInSelectedForm = selectedForm.subjects?.flatMap(s => s.subjectIds.map(sub => sub._id || sub)) || [];
+                  const countAllocatedSelected = allocations.filter(a => subjectIdsInSelectedForm.includes(a.subject?._id || a.subject)).length;
+                  const isSelectedComplete = subjectIdsInSelectedForm.length > 0 && countAllocatedSelected >= subjectIdsInSelectedForm.length;
+                  
+                  return isSelectedComplete ? (
+                    <Button size="sm" onClick={handleExportExcel} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                      <Download className="w-4 h-4 mr-2" /> Download to Excel
+                    </Button>
+                  ) : null;
+                })()}
               </CardHeader>
               <CardContent className="p-0">
                 {getFormSubjects().length === 0 ? (

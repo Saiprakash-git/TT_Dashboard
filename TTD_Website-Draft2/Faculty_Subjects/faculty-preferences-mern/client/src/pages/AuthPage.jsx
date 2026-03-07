@@ -13,6 +13,7 @@ export default function AuthPage() {
   const { login, user } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [isFirstLogin, setIsFirstLogin] = useState(false);
+  const [error, setError] = useState(null);
 
   // Form states
   const [facultyId, setFacultyId] = useState('');
@@ -28,9 +29,11 @@ export default function AuthPage() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    setError(null);
     
     if (!facultyId || !password) {
       toast.error('Please fill in all fields');
+      setError('Please fill in all fields');
       return;
     }
 
@@ -65,6 +68,7 @@ export default function AuthPage() {
       }
     } else {
       console.log(result);
+      setError(result.error || 'Login failed. Please check your credentials.');
       toast.error(result.error || 'Login failed');
     }
   };

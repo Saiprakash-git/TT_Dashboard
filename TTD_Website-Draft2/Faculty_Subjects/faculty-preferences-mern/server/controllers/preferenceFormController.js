@@ -155,11 +155,11 @@ export const updatePreferenceForm = async (req, res, next) => {
       });
     }
 
-    // Prevent updating if form is closed
-    if (form.status === 'closed') {
+    // Prevent updating if form is closed (unless we are reopening it)
+    if (form.status === 'closed' && status !== 'active') {
       return res.status(400).json({
         success: false,
-        message: 'Cannot update a closed preference form',
+        message: 'Cannot update a closed preference form. Please reopen it first.',
       });
     }
 

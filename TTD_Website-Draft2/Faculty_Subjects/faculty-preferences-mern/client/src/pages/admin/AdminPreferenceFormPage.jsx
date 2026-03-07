@@ -223,13 +223,13 @@ const AdminPreferenceFormPage = () => {
       toast.success(`Form status changed to ${newStatus}`);
       fetchData();
 
-      if (newStatus === 'closed' && form.allocationMethod === 'automatic') {
-        const loadingToast = toast.loading('Processing automatic allocation...');
+      if (newStatus === 'closed') {
+        const loadingToast = toast.loading('Processing smart allocation updates...');
         try {
           const res = await api.post(`/allocations/auto-allocate/${form._id}`);
-          toast.success('Automatic allocation completed successfully!', { id: loadingToast });
+          toast.success('Smart allocation scan completed successfully!', { id: loadingToast });
         } catch (e) {
-          toast.error('Auto allocation failed: ' + (e.response?.data?.message || e.message), { id: loadingToast });
+          toast.error('Smart allocation scan failed: ' + (e.response?.data?.message || e.message), { id: loadingToast });
         }
       }
     } catch (err) {
@@ -378,6 +378,17 @@ const AdminPreferenceFormPage = () => {
                       onClick={() => handleChangeStatus(form, 'closed')}
                     >
                       <Square className="w-3.5 h-3.5 mr-1.5" /> Close Form
+                    </Button>
+                  )}
+
+                  {form.status === 'closed' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 border-amber-200 text-amber-700 hover:bg-amber-50"
+                      onClick={() => handleChangeStatus(form, 'active')}
+                    >
+                      <Play className="w-3.5 h-3.5 mr-1.5" /> Reopen Form
                     </Button>
                   )}
 

@@ -107,7 +107,7 @@ const AdminPreferencesPage = () => {
       results.splice(0, results.length, ...results.filter(r => {
         if (selectedSemester === 'Even') return r.subjectSemesterType === 'Even';
         if (selectedSemester === 'Odd') return r.subjectSemesterType === 'Odd';
-        return r.subjectSemesterNumber === parseInt(selectedSemester);
+        return r.subjectSemesterNumber === parseInt(selectedSemester) || String(r.subjectSemesterType) === selectedSemester;
       }));
     }
 

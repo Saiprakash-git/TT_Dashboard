@@ -29,11 +29,20 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      window.location.href = '/login';
+      
+      // Prevent infinite reload loops on the login page
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
     } else if (error.response?.data?.message) {
-      toast.error(error.response.data.message);
+      // Avoid double-toasting if the component handles it
+      if (window.location.pathname !== '/login') {
+        toast.error(error.response.data.message);
+      }
     } else {
-      toast.error('An unexpected error occurred. Please try again.');
+      if (window.location.pathname !== '/login') {
+        toast.error('An unexpected error occurred. Please try again.');
+      }
     }
     return Promise.reject(error);
   }
