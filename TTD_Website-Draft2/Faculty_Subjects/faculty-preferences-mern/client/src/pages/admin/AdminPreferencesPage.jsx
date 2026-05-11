@@ -42,7 +42,7 @@ const AdminPreferencesPage = () => {
 
   // Get unique teachers with preferences
   const teachersWithPreferences = useMemo(() => {
-    return [...new Map(allPreferences.map(p => [p.teacher?._id, p.teacher])).values()];
+    return [...new Map(allPreferences.filter(p => p.teacher && p.teacher._id).map(p => [p.teacher._id, p.teacher])).values()];
   }, [allPreferences]);
 
   // Get subjects that appear in preferences
@@ -198,9 +198,9 @@ const AdminPreferencesPage = () => {
                   className="w-full bg-white border border-slate-300 text-slate-900 text-sm rounded-md focus:ring-indigo-500 focus:border-indigo-500 block p-2 h-10"
                 >
                   <option value="all">All Teachers</option>
-                  {teachersWithPreferences.map(teacher => (
+                  {teachersWithPreferences.filter(t => t && t._id).map(teacher => (
                     <option key={teacher._id} value={teacher._id}>
-                      {teacher.fullName}
+                      {teacher.fullName || 'Unknown'}
                     </option>
                   ))}
                 </select>
