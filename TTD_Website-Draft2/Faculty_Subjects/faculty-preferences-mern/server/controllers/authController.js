@@ -65,12 +65,18 @@ export const login = async (req, res, next) => {
     if (!facultyId || !password) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide faculty ID and password',
+        message: 'Please provide faculty ID or email and password',
       });
     }
 
+    // Detect if input is an email (contains @) or a faculty ID
+    const isEmail = facultyId.includes('@');
+    const query = isEmail
+      ? { email: facultyId.toLowerCase().trim() }
+      : { facultyId: facultyId.toUpperCase().trim() };
+
     // Check for user (include password for comparison)
-    const user = await User.findOne({ facultyId }).select('+password +isFirstLogin');
+    const user = await User.findOne(query).select('+password +isFirstLogin');
 
     if (!user) {
       return res.status(401).json({

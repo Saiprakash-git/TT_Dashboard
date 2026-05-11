@@ -28,11 +28,25 @@ const AdminSubjectsPage = () => {
     semesterNumber: '',
     program: 'B.E/B.Tech',
     professionalElective: false,
+    peGroupName: '',
   });
+  const [peGroups, setPeGroups] = useState({}); // { semesterNumber: ['PE1', 'PE2', ...] }
+  const [showNewPeInput, setShowNewPeInput] = useState(false);
+  const [newPeGroupName, setNewPeGroupName] = useState('');
 
   useEffect(() => {
     fetchSubjects();
+    fetchPeGroups();
   }, []);
+
+  const fetchPeGroups = async () => {
+    try {
+      const res = await api.get('/subjects/pe-groups');
+      setPeGroups(res.data.data || {});
+    } catch (err) {
+      console.error('Failed to fetch PE groups', err);
+    }
+  };
 
   const fetchSubjects = async () => {
     try {
@@ -63,6 +77,7 @@ const AdminSubjectsPage = () => {
       }
 
       fetchSubjects();
+      fetchPeGroups();
       handleCloseModal();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Operation failed');
@@ -82,7 +97,10 @@ const AdminSubjectsPage = () => {
       semesterNumber: subject.semesterNumber || '',
       program: subject.program || 'B.E/B.Tech',
       professionalElective: Boolean(subject.professionalElective),
+      peGroupName: subject.peGroupName || '',
     });
+    setShowNewPeInput(false);
+    setNewPeGroupName('');
     setShowModal(true);
   };
 
@@ -110,7 +128,10 @@ const AdminSubjectsPage = () => {
       semesterNumber: '',
       program: 'B.E/B.Tech',
       professionalElective: false,
+      peGroupName: '',
     });
+    setShowNewPeInput(false);
+    setNewPeGroupName('');
   };
 
   const handleEndSemester = async () => {
@@ -325,7 +346,12 @@ const AdminSubjectsPage = () => {
                             </td>
                             <td className="px-4 py-3">
                               {subject.professionalElective ? (
-                                <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100">Prof. Elective</Badge>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100">Prof. Elective</Badge>
+                                  {subject.peGroupName && (
+                                    <Badge variant="outline" className="text-emerald-600 border-emerald-300 bg-emerald-50/50 text-xs">{subject.peGroupName}</Badge>
+                                  )}
+                                </div>
                               ) : (
                                 <Badge variant="outline" className="text-slate-500 bg-slate-50">Core</Badge>
                               )}
@@ -474,13 +500,95 @@ const AdminSubjectsPage = () => {
                           type="checkbox"
                           className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
                           checked={formData.professionalElective}
-                          onChange={(e) => setFormData({ ...formData, professionalElective: e.target.checked })}
+                          onChange={(e) => setFormData({ ...formData, professionalElective: e.target.checked, peGroupName: e.target.checked ? formData.peGroupName : '' })}
                         />
                         <span className="text-sm font-medium">Professional Elective</span>
                       </label>
                       <p className="text-xs text-muted-foreground ml-6">Mark this subject as an elective</p>
                     </div>
                   </div>
+
+                  {/* PE Group Name Selector - only when PE is checked and semester is selected */}
+                  {formData.professionalElective && formData.semesterNumber && (
+                    <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-200 space-y-3">
+                      <Label className="text-emerald-800 font-semibold">PE Group Name *</Label>
+                      <p className="text-xs text-emerald-600">Select an existing PE group in Semester {formData.semesterNumber} or create a new one</p>
+                      
+                      {!showNewPeInput ? (
+                        <div className="space-y-2">
+                          <select
+                            className="flex h-10 w-full rounded-md border border-emerald-300 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
+                            value={formData.peGroupName}
+                            onChange={(e) => {
+                              if (e.target.value === '__NEW__') {
+                                setShowNewPeInput(true);
+                                setFormData({ ...formData, peGroupName: '' });
+                              } else {
+                                setFormData({ ...formData, peGroupName: e.target.value });
+                              }
+                            }}
+                          >
+                            <option value="">-- Select PE Group --</option>
+                            {(peGroups[formData.semesterNumber] || []).map(name => (
+                              <option key={name} value={name}>{name}</option>
+                            ))}
+                            <option value="__NEW__">➕ Add New PE Group</option>
+                          </select>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="e.g. PE1, PE2, Professional Elective 3"
+                              value={newPeGroupName}
+                              onChange={(e) => setNewPeGroupName(e.target.value)}
+                              className="bg-white border-emerald-300 focus-visible:ring-emerald-500"
+                            />
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="bg-emerald-600 hover:bg-emerald-700 whitespace-nowrap h-10"
+                              onClick={() => {
+                                if (newPeGroupName.trim()) {
+                                  setFormData({ ...formData, peGroupName: newPeGroupName.trim() });
+                                  setShowNewPeInput(false);
+                                }
+                              }}
+                            >
+                              Confirm
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-10 border-emerald-300"
+                              onClick={() => {
+                                setShowNewPeInput(false);
+                                setNewPeGroupName('');
+                              }}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      {formData.peGroupName && (
+                        <div className="flex items-center gap-2 mt-2">
+                          <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300">
+                            {formData.peGroupName}
+                          </Badge>
+                          <span className="text-xs text-emerald-600">— Semester {formData.semesterNumber}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {formData.professionalElective && !formData.semesterNumber && (
+                    <div className="p-3 bg-amber-50 rounded-lg border border-amber-200 text-amber-700 text-sm">
+                      ⚠️ Please select a semester number first to assign a PE group name.
+                    </div>
+                  )}
 
                   <div className="space-y-2">
                     <Label htmlFor="description">Description</Label>

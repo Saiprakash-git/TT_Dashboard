@@ -106,3 +106,36 @@ export const deleteSubject = async (req, res, next) => {
     next(error);
   }
 };
+
+// @desc    Get distinct PE group names grouped by semester
+// @route   GET /api/subjects/pe-groups
+// @access  Private
+export const getPeGroups = async (req, res, next) => {
+  try {
+    const peSubjects = await Subject.find({
+      professionalElective: true,
+      peGroupName: { $ne: '' },
+    }).select('peGroupName semesterNumber semester').lean();
+
+    // Group by semesterNumber
+    const grouped = {};
+    peSubjects.forEach((s) => {
+      const key = s.semesterNumber || 'Uncategorized';
+      if (!grouped[key]) grouped[key] = new Set();
+      grouped[key].add(s.peGroupName);
+    });
+
+    // Convert sets to arrays
+    const result = {};
+    Object.entries(grouped).forEach(([sem, names]) => {
+      result[sem] = Array.from(names).sort();
+    });
+
+    res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+};

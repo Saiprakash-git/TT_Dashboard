@@ -43,6 +43,11 @@ const subjectSchema = new mongoose.Schema(
       default: false,
       index: true,
     },
+    peGroupName: {
+      type: String,
+      trim: true,
+      default: '',
+    },
   },
   {
     timestamps: true,

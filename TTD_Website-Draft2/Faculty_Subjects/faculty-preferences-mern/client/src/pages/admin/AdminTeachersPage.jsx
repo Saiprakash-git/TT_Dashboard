@@ -174,8 +174,8 @@ const AdminTeachersPage = () => {
     setMessage('');
     setError('');
 
-    if (!form.fullName || !form.email || !form.facultyId) {
-      setError('Full name, email, and faculty ID are required.');
+    if (!form.fullName || !form.email) {
+      setError('Full name and email are required.');
       return;
     }
 
@@ -221,8 +221,8 @@ const AdminTeachersPage = () => {
         return;
       }
 
-      // Validate headers
-      const requiredHeaders = ['fullName', 'email', 'facultyId'];
+      // Validate headers — only fullName and email are required
+      const requiredHeaders = ['fullName', 'email'];
       const headers = Object.keys(data[0]);
       const missingHeaders = requiredHeaders.filter(h => !headers.includes(h));
       if (missingHeaders.length > 0) {
@@ -299,8 +299,8 @@ const AdminTeachersPage = () => {
                     <Input required type="email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} />
                   </div>
                   <div className="space-y-2">
-                    <Label>Faculty ID *</Label>
-                    <Input required value={form.facultyId} onChange={e => setForm({...form, facultyId: e.target.value})} />
+                    <Label>Faculty ID</Label>
+                    <Input value={form.facultyId} onChange={e => setForm({...form, facultyId: e.target.value})} placeholder="Optional — leave blank if not available" className="bg-slate-50" />
                   </div>
                   <div className="space-y-2">
                     <Label>Department</Label>
@@ -339,10 +339,10 @@ const AdminTeachersPage = () => {
                 <div className="flex flex-wrap gap-2 mb-4">
                   <Badge variant="secondary" className="bg-white border-indigo-200">fullName</Badge>
                   <Badge variant="secondary" className="bg-white border-indigo-200">email</Badge>
-                  <Badge variant="secondary" className="bg-white border-indigo-200">facultyId</Badge>
                 </div>
                 <h3 className="font-semibold text-indigo-900 mb-2 text-sm">Optional Columns:</h3>
                 <div className="flex flex-wrap gap-2 mb-6">
+                  <Badge variant="outline" className="bg-white/50 text-slate-500">facultyId</Badge>
                   <Badge variant="outline" className="bg-white/50 text-slate-500">department</Badge>
                   <Badge variant="outline" className="bg-white/50 text-slate-500">designation</Badge>
                   <Badge variant="outline" className="bg-white/50 text-slate-500">phone</Badge>
@@ -391,7 +391,7 @@ const AdminTeachersPage = () => {
                       {uploadResults.data.success.map((item, idx) => (
                         <div key={idx} className="flex justify-between items-center text-sm bg-white p-2 rounded shadow-sm border border-slate-100">
                           <span className="font-medium text-slate-700">{item.fullName}</span>
-                          <span className="text-xs text-slate-500 font-mono">{item.facultyId}</span>
+                          <span className="text-xs text-slate-500 font-mono">{item.facultyId || item.email}</span>
                         </div>
                       ))}
                     </div>
@@ -571,7 +571,7 @@ const AdminTeachersPage = () => {
                         <tr key={teacher._id} className="hover:bg-slate-50 transition-colors">
                           <td className="px-4 py-3">
                             <div className="font-medium text-slate-900">{teacher.fullName}</div>
-                            <div className="text-slate-500 text-xs font-mono">{teacher.facultyId} | {teacher.email}</div>
+                            <div className="text-slate-500 text-xs font-mono">{teacher.facultyId ? `${teacher.facultyId} | ` : ''}{teacher.email}</div>
                           </td>
                           <td className="px-4 py-3">
                             <span className="text-slate-700">{teacher.department || '-'}</span>

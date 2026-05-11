@@ -7,7 +7,7 @@ import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
-import { Plus, CheckCircle2, Play, Square, Edit2, Trash2, CalendarDays, BookOpen, Settings, Clock } from 'lucide-react';
+import { Plus, CheckCircle2, Play, Square, Edit2, Trash2, CalendarDays, BookOpen, Settings, Clock, AlertTriangle, XCircle, Info } from 'lucide-react';
 
 const AdminPreferenceFormPage = () => {
   const [forms, setForms] = useState([]);
@@ -34,18 +34,23 @@ const AdminPreferenceFormPage = () => {
     endsAt: '',
   });
 
+  const [teachers, setTeachers] = useState([]);
+
   useEffect(() => {
     fetchData();
   }, []);
 
   const fetchData = async () => {
     try {
-      const [formsRes, subjectsRes] = await Promise.all([
+      const [formsRes, subjectsRes, usersRes] = await Promise.all([
         api.get('/preference-forms'),
         api.get('/subjects'),
+        api.get('/users'),
       ]);
       setForms(formsRes.data.data || []);
       setSubjects(subjectsRes.data.data || []);
+      const allUsers = usersRes.data?.data || [];
+      setTeachers(allUsers.filter(u => u.role === 'teacher'));
     } catch (err) {
       toast.error('Failed to load data');
       console.error(err);
@@ -526,6 +531,85 @@ const AdminPreferenceFormPage = () => {
                         />
                         <p className="text-xs text-muted-foreground">How many subjects should a teacher take up in the automatic allocation?</p>
                       </div>
+
+                      {/* Feasibility Check Banner */}
+                      {(() => {
+                        const teacherCount = teachers.length;
+                        const subjectCount = subjects.filter(s => formData.includedSemesters.includes(s.semester)).length;
+                        const maxPerTeacher = parseInt(formData.maxSubjectsPerTeacher) || 1;
+                        const totalCapacity = teacherCount * maxPerTeacher;
+
+                        if (teacherCount === 0) {
+                          return (
+                            <div className="flex items-start gap-3 p-3 bg-rose-50 border border-rose-200 rounded-lg text-sm text-rose-800">
+                              <XCircle className="w-5 h-5 shrink-0 mt-0.5 text-rose-500" />
+                              <div>
+                                <p className="font-semibold">No teachers in the system</p>
+                                <p className="text-xs text-rose-600 mt-0.5">Add teachers before setting up automatic allocation.</p>
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        if (subjectCount === 0) {
+                          return (
+                            <div className="flex items-start gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                              <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5 text-amber-500" />
+                              <div>
+                                <p className="font-semibold">No subjects found for selected semesters</p>
+                                <p className="text-xs text-amber-600 mt-0.5">Add subjects to {formData.includedSemesters.join(' & ')} semesters first.</p>
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        if (totalCapacity < subjectCount) {
+                          const neededPerTeacher = Math.ceil(subjectCount / teacherCount);
+                          return (
+                            <div className="flex items-start gap-3 p-3 bg-rose-50 border border-rose-200 rounded-lg text-sm text-rose-800">
+                              <XCircle className="w-5 h-5 shrink-0 mt-0.5 text-rose-500" />
+                              <div>
+                                <p className="font-semibold">Allocation not feasible!</p>
+                                <p className="text-xs text-rose-600 mt-0.5">
+                                  <strong>{teacherCount}</strong> teachers × <strong>{maxPerTeacher}</strong> subjects each = <strong>{totalCapacity}</strong> capacity, but there are <strong>{subjectCount}</strong> subjects.
+                                </p>
+                                <p className="text-xs text-rose-600 mt-1">
+                                  💡 Increase to at least <strong>{neededPerTeacher}</strong> subjects per teacher, or add more teachers.
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        const unallocatedTeachers = teacherCount - Math.ceil(subjectCount / maxPerTeacher);
+
+                        if (unallocatedTeachers > teacherCount * 0.5) {
+                          return (
+                            <div className="flex items-start gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                              <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5 text-amber-500" />
+                              <div>
+                                <p className="font-semibold">Feasible, but many teachers may go unallocated</p>
+                                <p className="text-xs text-amber-600 mt-0.5">
+                                  <strong>{teacherCount}</strong> teachers × <strong>{maxPerTeacher}</strong> each = <strong>{totalCapacity}</strong> capacity for <strong>{subjectCount}</strong> subjects.
+                                  ~<strong>{unallocatedTeachers}</strong> teachers may not receive any subject.
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div className="flex items-start gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-800">
+                            <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5 text-emerald-500" />
+                            <div>
+                              <p className="font-semibold">Allocation looks feasible ✓</p>
+                              <p className="text-xs text-emerald-600 mt-0.5">
+                                <strong>{teacherCount}</strong> teachers × <strong>{maxPerTeacher}</strong> each = <strong>{totalCapacity}</strong> capacity for <strong>{subjectCount}</strong> subjects.
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
 
@@ -591,7 +675,20 @@ const AdminPreferenceFormPage = () => {
                     <Button type="button" variant="outline" onClick={handleCloseModal} disabled={isSubmitting}>
                       Cancel
                     </Button>
-                    <Button type="submit" disabled={isSubmitting || formData.includedSemesters.length === 0} className="bg-indigo-600 hover:bg-indigo-700 font-medium px-6">
+                    <Button 
+                      type="submit" 
+                      disabled={
+                        isSubmitting || 
+                        formData.includedSemesters.length === 0 ||
+                        (formData.allocationMethod === 'automatic' && (() => {
+                          const teacherCount = teachers.length;
+                          const subjectCount = subjects.filter(s => formData.includedSemesters.includes(s.semester)).length;
+                          const maxPerTeacher = parseInt(formData.maxSubjectsPerTeacher) || 1;
+                          return teacherCount === 0 || (teacherCount * maxPerTeacher) < subjectCount;
+                        })())
+                      } 
+                      className="bg-indigo-600 hover:bg-indigo-700 font-medium px-6"
+                    >
                       {isSubmitting ? 'Saving...' : (editingForm ? 'Update Form' : 'Create Form')}
                     </Button>
                   </div>

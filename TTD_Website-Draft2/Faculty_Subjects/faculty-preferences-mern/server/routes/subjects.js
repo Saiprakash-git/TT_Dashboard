@@ -5,10 +5,14 @@ import {
   createSubject,
   updateSubject,
   deleteSubject,
+  getPeGroups,
 } from '../controllers/subjectController.js';
 import { protect, authorize } from '../middleware/auth.js';
 
 const router = express.Router();
+
+// PE groups route must be before /:id to avoid conflict
+router.get('/pe-groups', protect, getPeGroups);
 
 router
   .route('/')

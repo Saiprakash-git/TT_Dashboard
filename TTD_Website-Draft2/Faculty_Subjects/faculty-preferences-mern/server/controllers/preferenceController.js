@@ -8,7 +8,7 @@ export const getAllPreferences = async (req, res, next) => {
   try {
     const preferences = await Preference.find()
       .populate('teacher', 'fullName email department designation facultyId')
-      .populate('preferences.subject', 'name code credits semester program')
+      .populate('preferences.subject', 'name code credits semester semesterNumber program professionalElective peGroupName')
       .lean();
 
     res.status(200).json({
@@ -37,7 +37,7 @@ export const getPreference = async (req, res, next) => {
 
     const preference = await Preference.findOne({ teacher: teacherId })
       .populate('teacher', 'fullName email department designation facultyId')
-      .populate('preferences.subject', 'name code credits semester program')
+      .populate('preferences.subject', 'name code credits semester semesterNumber program professionalElective peGroupName')
       .lean();
 
     if (!preference) {
@@ -60,7 +60,7 @@ export const getMyPreference = async (req, res, next) => {
   try {
     const preference = await Preference.findOne({ teacher: req.user.id })
       .populate('teacher', 'fullName email department designation facultyId canEditPreferences')
-      .populate('preferences.subject', 'name code credits semester program')
+      .populate('preferences.subject', 'name code credits semester semesterNumber program professionalElective peGroupName')
       .lean();
 
     res.status(200).json({ success: true, data: preference });
@@ -89,10 +89,10 @@ export const savePreference = async (req, res, next) => {
     }
 
     // Basic validation
-    if (!Array.isArray(preferences) || preferences.length < 3) {
+    if (!Array.isArray(preferences) || preferences.length < 1) {
       return res.status(400).json({
         success: false,
-        message: 'You must submit at least 3 preferences',
+        message: 'You must submit at least 1 preference',
       });
     }
 
@@ -109,9 +109,12 @@ export const savePreference = async (req, res, next) => {
       }
       seen.add(key);
 
-      const rankKey = `${p.program}:${p.semester || 'none'}`;
+      // For PEs, use peGroupName as part of the rank key so each PE group has independent ranks
+      const rankKey = p.peGroupName
+        ? `PE:${p.semester || 'none'}:${p.peGroupName}`
+        : `${p.program}:${p.semester || 'none'}`;
       const ranks = rankMap.get(rankKey) || new Set();
-      if (p.rank < 1 || p.rank > 3 || ranks.has(p.rank)) {
+      if (p.rank < 1 || p.rank > 10 || ranks.has(p.rank)) {
         return res.status(400).json({ success: false, message: `Invalid or duplicate rank for ${rankKey}` });
       }
       ranks.add(p.rank);
@@ -128,7 +131,7 @@ export const savePreference = async (req, res, next) => {
 
     const populated = await Preference.findById(preference._id)
       .populate('teacher', 'fullName email department designation facultyId')
-      .populate('preferences.subject', 'name code credits semester program');
+      .populate('preferences.subject', 'name code credits semester semesterNumber program professionalElective peGroupName');
 
     res.status(200).json({ success: true, data: populated });
   } catch (error) {

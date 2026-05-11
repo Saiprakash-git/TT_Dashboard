@@ -9,13 +9,15 @@ export const createTeacher = async (req, res, next) => {
   try {
     const { email, fullName, facultyId, department, designation, phone, password } = req.body;
 
-    // Check if facultyId already exists
-    const existingUser = await User.findOne({ facultyId });
-    if (existingUser) {
-      return res.status(400).json({
-        success: false,
-        message: 'Faculty ID already exists',
-      });
+    // Check if facultyId already exists (only if provided)
+    if (facultyId) {
+      const existingUser = await User.findOne({ facultyId });
+      if (existingUser) {
+        return res.status(400).json({
+          success: false,
+          message: 'Faculty ID already exists',
+        });
+      }
     }
 
     // Check if email already exists
@@ -31,7 +33,6 @@ export const createTeacher = async (req, res, next) => {
     const teacherData = {
       email,
       fullName,
-      facultyId,
       department,
       designation,
       phone,
@@ -39,6 +40,11 @@ export const createTeacher = async (req, res, next) => {
       password: password || 'temp123', // Default temp password
       isFirstLogin: !password, // If admin didn't set password, mark as first login
     };
+
+    // Only set facultyId if provided
+    if (facultyId) {
+      teacherData.facultyId = facultyId;
+    }
 
     const teacher = await User.create(teacherData);
 
@@ -256,11 +262,11 @@ export const bulkUploadTeachers = async (req, res, next) => {
       const row = index + 2; // Excel row (accounting for header)
       const { email, fullName, facultyId, department, designation, phone, password } = teachers[index];
 
-      // Validation
-      if (!email || !fullName || !facultyId) {
+      // Validation — require email + fullName, facultyId is optional
+      if (!email || !fullName) {
         results.errors.push({
           row,
-          message: 'Missing required fields: email, fullName, facultyId',
+          message: 'Missing required fields: email, fullName',
         });
         continue;
       }
@@ -274,14 +280,16 @@ export const bulkUploadTeachers = async (req, res, next) => {
         continue;
       }
 
-      // Check if facultyId already exists
-      const existingFacultyId = await User.findOne({ facultyId });
-      if (existingFacultyId) {
-        results.errors.push({
-          row,
-          message: `Faculty ID already exists: ${facultyId}`,
-        });
-        continue;
+      // Check if facultyId already exists (only if provided)
+      if (facultyId) {
+        const existingFacultyId = await User.findOne({ facultyId });
+        if (existingFacultyId) {
+          results.errors.push({
+            row,
+            message: `Faculty ID already exists: ${facultyId}`,
+          });
+          continue;
+        }
       }
 
       // Check if email already exists
@@ -299,7 +307,6 @@ export const bulkUploadTeachers = async (req, res, next) => {
         const teacherData = {
           email,
           fullName,
-          facultyId,
           department: department || '',
           designation: designation || '',
           phone: phone || '',
@@ -307,6 +314,11 @@ export const bulkUploadTeachers = async (req, res, next) => {
           password: password || 'temp123',
           isFirstLogin: !password,
         };
+
+        // Only set facultyId if provided
+        if (facultyId) {
+          teacherData.facultyId = facultyId;
+        }
 
         const newTeacher = await User.create(teacherData);
         results.success.push({

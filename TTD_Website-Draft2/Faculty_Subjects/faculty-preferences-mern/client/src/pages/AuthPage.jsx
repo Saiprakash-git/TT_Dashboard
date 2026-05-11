@@ -140,17 +140,17 @@ export default function AuthPage() {
             <CardDescription>
               {isFirstLogin
                 ? 'Please create a new password for your account'
-                : 'Sign in with your Faculty ID'}
+                : 'Sign in with your Faculty ID or Email'}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleLogin} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="faculty-id">Faculty ID</Label>
+                <Label htmlFor="faculty-id">Faculty ID or Email</Label>
                 <Input
                   id="faculty-id"
                   type="text"
-                  placeholder="Enter your Faculty ID"
+                  placeholder="Enter Faculty ID or Email"
                   value={facultyId}
                   onChange={(e) => setFacultyId(e.target.value)}
                   disabled={isFirstLogin}

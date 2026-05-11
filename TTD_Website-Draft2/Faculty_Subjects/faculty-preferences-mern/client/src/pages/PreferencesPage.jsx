@@ -77,16 +77,21 @@ export default function PreferencesPage() {
         const subjectObj = allSubjects.find(s => s._id === subjectId);
         
         if (subjectObj) {
-          // Group by program + semesterNumber, fallback to Uncategorized if none
-          const semNumKey = subjectObj.semesterNumber ? `Sem ${subjectObj.semesterNumber}` : 'Uncategorized';
-          const key = subjectObj.professionalElective 
-            ? `PE` 
-            : `${subjectObj.program}|${semNumKey}`;
+          let key;
+          if (subjectObj.professionalElective) {
+            // PE key: PE|Sem X|GroupName
+            const semKey = subjectObj.semesterNumber ? `Sem ${subjectObj.semesterNumber}` : 'Uncategorized';
+            const groupName = subjectObj.peGroupName || 'Ungrouped';
+            key = `PE|${semKey}|${groupName}`;
+          } else {
+            const semNumKey = subjectObj.semesterNumber ? `Sem ${subjectObj.semesterNumber}` : 'Uncategorized';
+            key = `${subjectObj.program}|${semNumKey}`;
+          }
           
           if (!prefsMap[key]) {
-            prefsMap[key] = Array(activeForm?.preferencesPerSemester || 3).fill('');
+            prefsMap[key] = Array(form?.preferencesPerSemester || 3).fill('');
           }
-          if (p.rank >= 1 && p.rank <= (activeForm?.preferencesPerSemester || 3)) {
+          if (p.rank >= 1 && p.rank <= (form?.preferencesPerSemester || 3)) {
             prefsMap[key][p.rank - 1] = subjectId;
           }
         }
@@ -130,11 +135,14 @@ export default function PreferencesPage() {
     });
   };
 
-  const filterAvailable = (program, semesterNumKey, prefs, currentIndex) => {
+  const filterAvailable = (program, semesterNumKey, prefs, currentIndex, peGroupName) => {
     const selected = prefs.filter((id, i) => i !== currentIndex && id);
     return formSubjects.filter((s) => {
-      if (semesterNumKey === 'PE') {
-        return s.professionalElective === true && !selected.includes(s._id);
+      // PE group filtering
+      if (peGroupName) {
+        return s.professionalElective === true && 
+               (s.peGroupName || 'Ungrouped') === peGroupName &&
+               !selected.includes(s._id);
       }
       
       const sNumKey = s.semesterNumber ? `Sem ${s.semesterNumber}` : 'Uncategorized';
@@ -158,13 +166,17 @@ export default function PreferencesPage() {
     // We must merge with global existing preferences that ARE NOT in this form. 
     // To do this, we collect everything from the local state mapping:
     Object.entries(preferences).forEach(([key, prefs]) => {
-      let program, semesterNumKey;
+      let program, semesterNumKey, peGroupName;
       
-      if (key === 'PE') {
+      if (key.startsWith('PE|')) {
+        // PE key format: PE|Sem X|GroupName
+        const parts = key.split('|');
         program = 'Professional Elective';
-        semesterNumKey = 'PE';
+        semesterNumKey = parts[1]; // e.g. 'Sem 3'
+        peGroupName = parts[2]; // e.g. 'PE1'
       } else {
         [program, semesterNumKey] = key.split('|');
+        peGroupName = '';
       }
 
       prefs.forEach((subjectId, index) => {
@@ -174,6 +186,7 @@ export default function PreferencesPage() {
             subject: subjectId,
             program: sObj ? sObj.program : program,
             semester: semesterNumKey, 
+            peGroupName: peGroupName || '',
             rank: index + 1,
           });
         }
@@ -437,50 +450,106 @@ export default function PreferencesPage() {
               });
             })}
 
-            {/* Professional Electives Block */}
+            {/* Professional Electives Block - grouped by semester then by PE group */}
             {(() => {
-              const hasPE = formSubjects.some((s) => s.professionalElective === true);
-              if (!hasPE) return null;
+              const peSubjects = formSubjects.filter(s => s.professionalElective === true);
+              if (peSubjects.length === 0) return null;
 
-              const prefs = preferences['PE'] || Array(activeForm.preferencesPerSemester || 3).fill('');
+              // Group PE subjects by semester number, then by PE group name
+              const semGroupMap = {};
+              peSubjects.forEach(s => {
+                const semKey = s.semesterNumber ? `Sem ${s.semesterNumber}` : 'Uncategorized';
+                const groupName = s.peGroupName || 'Ungrouped';
+                if (!semGroupMap[semKey]) semGroupMap[semKey] = {};
+                if (!semGroupMap[semKey][groupName]) semGroupMap[semKey][groupName] = [];
+                semGroupMap[semKey][groupName].push(s);
+              });
+
+              // Sort semester keys
+              const sortedSemKeys = Object.keys(semGroupMap).sort((a, b) => {
+                if (a === 'Uncategorized') return 1;
+                if (b === 'Uncategorized') return -1;
+                const numA = parseInt(a.replace('Sem ', ''));
+                const numB = parseInt(b.replace('Sem ', ''));
+                return numA - numB;
+              });
 
               return (
-                <Card className="border-emerald-200 shadow-sm overflow-hidden">
-                  <div className="bg-emerald-50 px-5 py-4 border-b border-emerald-100 flex justify-between items-center">
-                    <CardTitle className="text-base font-semibold text-emerald-800">
-                      Professional Electives
-                    </CardTitle>
+                <div className="md:col-span-2">
+                  <div className="mb-4 mt-2">
+                    <h2 className="text-xl font-bold text-emerald-800 flex items-center gap-2">
+                      🎓 Professional Electives
+                    </h2>
+                    <p className="text-sm text-emerald-600 mt-1">Select your preferences for each PE group per semester</p>
                   </div>
-                  <CardContent className="p-5 space-y-4">
-                    {Array.from({ length: activeForm.preferencesPerSemester || 3 }).map((_, idx) => (
-                      <div key={`PE-${idx}`} className="space-y-1.5">
-                        <label className="text-sm font-medium text-slate-600 flex items-center">
-                          <span className="flex-shrink-0 w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xs font-bold mr-2 border border-emerald-200">
-                            {idx + 1}
-                          </span>
-                          {idx === 0 ? 'Top Preference' : idx === 1 ? '2nd Choice' : idx === 2 ? '3rd Choice' : `${idx + 1}th Choice`}
-                        </label>
-                        <select
-                          className="w-full border-slate-200 rounded-md px-3 py-2.5 text-sm bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 shadow-sm disabled:bg-slate-50 disabled:text-slate-500 transition-colors"
-                          value={prefs[idx] || ''}
-                          onChange={(e) => {
-                            const next = [...prefs];
-                            next[idx] = e.target.value;
-                            setPreferences({ ...preferences, 'PE': next });
-                          }}
-                          disabled={disableEditing}
-                        >
-                          <option value="">-- Select an Elective --</option>
-                          {filterAvailable('PE', 'PE', prefs, idx).map((subject) => (
-                            <option key={subject._id} value={subject._id}>
-                              {subject.code} - {subject.name} ({subject.credits} cr)
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
+                  
+                  <div className="space-y-6">
+                    {sortedSemKeys.map(semKey => {
+                      const groups = semGroupMap[semKey];
+                      const sortedGroupNames = Object.keys(groups).sort();
+
+                      return (
+                        <div key={semKey}>
+                          <div className="flex items-center gap-2 mb-3">
+                            <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-sm px-3 py-1">
+                              {semKey}
+                            </Badge>
+                            <div className="h-px flex-grow bg-emerald-200" />
+                          </div>
+                          
+                          <div className="grid gap-4 md:grid-cols-2">
+                            {sortedGroupNames.map(groupName => {
+                              const peKey = `PE|${semKey}|${groupName}`;
+                              const prefs = preferences[peKey] || Array(activeForm.preferencesPerSemester || 3).fill('');
+
+                              return (
+                                <Card key={peKey} className="border-emerald-200 shadow-sm overflow-hidden">
+                                  <div className="bg-emerald-50 px-5 py-3 border-b border-emerald-100 flex justify-between items-center">
+                                    <CardTitle className="text-base font-semibold text-emerald-800">
+                                      {groupName}
+                                    </CardTitle>
+                                    <Badge variant="outline" className="text-emerald-600 border-emerald-300 text-xs">
+                                      {groups[groupName].length} subjects
+                                    </Badge>
+                                  </div>
+                                  <CardContent className="p-5 space-y-4">
+                                    {Array.from({ length: activeForm.preferencesPerSemester || 3 }).map((_, idx) => (
+                                      <div key={`${peKey}-${idx}`} className="space-y-1.5">
+                                        <label className="text-sm font-medium text-slate-600 flex items-center">
+                                          <span className="flex-shrink-0 w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xs font-bold mr-2 border border-emerald-200">
+                                            {idx + 1}
+                                          </span>
+                                          {idx === 0 ? 'Top Preference' : idx === 1 ? '2nd Choice' : idx === 2 ? '3rd Choice' : `${idx + 1}th Choice`}
+                                        </label>
+                                        <select
+                                          className="w-full border-slate-200 rounded-md px-3 py-2.5 text-sm bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 shadow-sm disabled:bg-slate-50 disabled:text-slate-500 transition-colors"
+                                          value={prefs[idx] || ''}
+                                          onChange={(e) => {
+                                            const next = [...prefs];
+                                            next[idx] = e.target.value;
+                                            setPreferences({ ...preferences, [peKey]: next });
+                                          }}
+                                          disabled={disableEditing}
+                                        >
+                                          <option value="">-- Select an Elective --</option>
+                                          {filterAvailable(null, null, prefs, idx, groupName).map((subject) => (
+                                            <option key={subject._id} value={subject._id}>
+                                              {subject.code} - {subject.name} ({subject.credits} cr)
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                    ))}
+                                  </CardContent>
+                                </Card>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               );
             })()}
           </div>

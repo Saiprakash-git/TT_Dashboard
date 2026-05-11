@@ -85,6 +85,8 @@ const AdminPreferencesPage = () => {
           subjectCode: subjectObj?.code || '',
           subjectSemesterType: subjectObj?.semester || '',
           subjectSemesterNumber: subjectObj?.semesterNumber || null,
+          isPE: subjectObj?.professionalElective || false,
+          peGroupName: subjectObj?.peGroupName || p.peGroupName || '',
           rank: p.rank || index + 1,
           program: p.program,
           submittedAt: preference.submittedAt || preference.updatedAt || preference.createdAt,
@@ -324,9 +326,12 @@ const AdminPreferencesPage = () => {
                         </td>
                         <td className="px-6 py-4">
                           <div className="font-medium text-slate-800">{row.subjectName}</div>
-                          <div className="flex items-center gap-2 mt-1">
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
                             <span className="font-mono text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 border border-slate-200">{row.subjectCode}</span>
                             <span className="text-xs text-slate-500">Sem {row.subjectSemesterNumber || row.subjectSemesterType}</span>
+                            {row.isPE && row.peGroupName && (
+                              <span className="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-200">{row.peGroupName}</span>
+                            )}
                           </div>
                         </td>
                         <td className="px-6 py-4 text-right text-slate-500 text-xs text-nowrap">

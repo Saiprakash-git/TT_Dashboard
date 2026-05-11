@@ -24,11 +24,16 @@ const preferenceSchema = new mongoose.Schema(
           type: String,
           trim: true,
         },
+        peGroupName: {
+          type: String,
+          trim: true,
+          default: '',
+        },
         rank: {
           type: Number,
           required: true,
           min: 1,
-          max: 3,
+          max: 10,
         },
       },
     ],
