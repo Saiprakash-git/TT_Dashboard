@@ -17,17 +17,28 @@ const preferenceFormSchema = new mongoose.Schema(
       default: 2,
       min: 1,
     },
-    // How many preferences per semester
+    // How many preferences per semester (Legacy)
     preferencesPerSemester: {
       type: Number,
       default: 3,
       min: 1,
+    },
+    // Required preferences per semester configuration
+    semesterPreferences: {
+      type: Map,
+      of: Number,
+      default: {},
     },
     // Which semesters are included in this form
     includedSemesters: {
       type: [String],
       enum: ['Even', 'Odd'],
       default: ['Even', 'Odd'],
+    },
+    // Which programs are included in this form
+    includedPrograms: {
+      type: [String],
+      default: ['B.E/B.Tech', 'M.Tech'],
     },
     // Allocation method: 'automatic' or 'manual'
     allocationMethod: {

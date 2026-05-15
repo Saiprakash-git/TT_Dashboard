@@ -118,6 +118,7 @@ export const createPreferenceForm = async (req, res, next) => {
       description,
       minimumPreferences: minimumPreferences || 2,
       preferencesPerSemester: preferencesPerSemester || 3,
+      semesterPreferences: req.body.semesterPreferences || {},
       includedSemesters: includedSemesters || ['Even', 'Odd'],
       allocationMethod: allocationMethod || 'manual',
       maxSubjectsPerTeacher: maxSubjectsPerTeacher || 1,
@@ -177,6 +178,7 @@ export const updatePreferenceForm = async (req, res, next) => {
     if (description) form.description = description;
     if (minimumPreferences) form.minimumPreferences = minimumPreferences;
     if (preferencesPerSemester) form.preferencesPerSemester = preferencesPerSemester;
+    if (req.body.semesterPreferences) form.semesterPreferences = req.body.semesterPreferences;
     if (allocationMethod) form.allocationMethod = allocationMethod;
     if (maxSubjectsPerTeacher) form.maxSubjectsPerTeacher = maxSubjectsPerTeacher;
     if (req.body.teachersPerSubject) form.teachersPerSubject = req.body.teachersPerSubject;

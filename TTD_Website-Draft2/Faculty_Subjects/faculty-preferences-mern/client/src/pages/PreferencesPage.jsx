@@ -138,6 +138,27 @@ export default function PreferencesPage() {
     });
   };
 
+  const getSlotsNeeded = (program, semesterNumKey, peGroupName, isProjectWork) => {
+    if (!activeForm) return 3;
+    let subject;
+    if (isProjectWork) {
+      subject = formSubjects.find(s => s.projectWork === true);
+    } else if (peGroupName) {
+      subject = formSubjects.find(s => s.professionalElective === true && (s.peGroupName || 'Ungrouped') === peGroupName && (s.semesterNumber ? `Sem ${s.semesterNumber}` : 'Uncategorized') === semesterNumKey);
+    } else {
+      subject = formSubjects.find(s => s.program === program && (s.semesterNumber ? `Sem ${s.semesterNumber}` : 'Uncategorized') === semesterNumKey && s.professionalElective !== true && s.projectWork !== true);
+    }
+    
+    if (subject && subject.semesterNumber !== undefined) {
+      const num = subject.semesterNumber.toString();
+      if (activeForm.semesterPreferences && activeForm.semesterPreferences[num] !== undefined) {
+        return activeForm.semesterPreferences[num];
+      }
+    }
+    // Fallback if no specific semester could be determined (e.g. empty group)
+    return activeForm.preferencesPerSemester || 0;
+  };
+
   const filterAvailable = (program, semesterNumKey, prefs, currentIndex, peGroupName, isProjectWork) => {
     const selected = prefs.filter((id, i) => i !== currentIndex && id);
     return formSubjects.filter((s) => {
@@ -180,7 +201,7 @@ export default function PreferencesPage() {
       semesterNumKeys.forEach((semesterNumKey) => {
         const key = `${program}|${semesterNumKey}`;
         const prefs = preferences[key] || [];
-        const slotsNeeded = activeForm.preferencesPerSemester || 3;
+        const slotsNeeded = getSlotsNeeded(program, semesterNumKey, null, false);
         for (let i = 0; i < slotsNeeded; i++) {
           if (!prefs[i]) {
             incompleteGroups.push(`${program} — ${semesterNumKey}`);
@@ -204,7 +225,7 @@ export default function PreferencesPage() {
         groups.forEach(groupName => {
           const peKey = `PE|${semKey}|${groupName}`;
           const prefs = preferences[peKey] || [];
-          const slotsNeeded = activeForm.preferencesPerSemester || 3;
+          const slotsNeeded = getSlotsNeeded(null, semKey, groupName, false);
           for (let i = 0; i < slotsNeeded; i++) {
             if (!prefs[i]) {
               incompleteGroups.push(`PE: ${groupName} (${semKey})`);
@@ -219,7 +240,7 @@ export default function PreferencesPage() {
     const projectSubjects = formSubjects.filter(s => s.projectWork === true);
     if (projectSubjects.length > 0) {
       const pwPrefs = preferences['ProjectWork'] || [];
-      const slotsNeeded = activeForm.preferencesPerSemester || 3;
+      const slotsNeeded = getSlotsNeeded(null, null, null, true);
       for (let i = 0; i < slotsNeeded; i++) {
         if (!pwPrefs[i]) {
           incompleteGroups.push('Project Work');
@@ -484,7 +505,8 @@ export default function PreferencesPage() {
               
               return semesterNumKeys.map((semesterNumKey) => {
                 const key = `${program}|${semesterNumKey}`;
-                const prefs = preferences[key] || Array(activeForm.preferencesPerSemester || 3).fill('');
+                const slotsNeeded = getSlotsNeeded(program, semesterNumKey, null, false);
+                const prefs = preferences[key] || Array(slotsNeeded).fill('');
                 
                 return (
                   <Card key={key} className="border-slate-200 shadow-sm overflow-hidden">
@@ -494,7 +516,7 @@ export default function PreferencesPage() {
                       </CardTitle>
                     </div>
                     <CardContent className="p-5 space-y-4">
-                      {Array.from({ length: activeForm.preferencesPerSemester || 3 }).map((_, idx) => (
+                      {Array.from({ length: slotsNeeded }).map((_, idx) => (
                         <div key={`${key}-${idx}`} className="space-y-1.5">
                           <label className="text-sm font-medium text-slate-600 flex items-center">
                             <span className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center text-xs font-bold mr-2 border border-indigo-100">
@@ -577,7 +599,8 @@ export default function PreferencesPage() {
                           <div className="grid gap-4 md:grid-cols-2">
                             {sortedGroupNames.map(groupName => {
                               const peKey = `PE|${semKey}|${groupName}`;
-                              const prefs = preferences[peKey] || Array(activeForm.preferencesPerSemester || 3).fill('');
+                              const slotsNeeded = getSlotsNeeded(null, semKey, groupName, false);
+                              const prefs = preferences[peKey] || Array(slotsNeeded).fill('');
 
                               return (
                                 <Card key={peKey} className="border-emerald-200 shadow-sm overflow-hidden">
@@ -590,7 +613,7 @@ export default function PreferencesPage() {
                                     </Badge>
                                   </div>
                                   <CardContent className="p-5 space-y-4">
-                                    {Array.from({ length: activeForm.preferencesPerSemester || 3 }).map((_, idx) => (
+                                    {Array.from({ length: slotsNeeded }).map((_, idx) => (
                                       <div key={`${peKey}-${idx}`} className="space-y-1.5">
                                         <label className="text-sm font-medium text-slate-600 flex items-center">
                                           <span className="flex-shrink-0 w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xs font-bold mr-2 border border-emerald-200">
@@ -635,7 +658,8 @@ export default function PreferencesPage() {
               const projectSubjects = formSubjects.filter(s => s.projectWork === true);
               if (projectSubjects.length === 0) return null;
 
-              const pwPrefs = preferences['ProjectWork'] || Array(activeForm.preferencesPerSemester || 3).fill('');
+              const slotsNeeded = getSlotsNeeded(null, null, null, true);
+              const pwPrefs = preferences['ProjectWork'] || Array(slotsNeeded).fill('');
 
               return (
                 <div className="md:col-span-2">
@@ -656,7 +680,7 @@ export default function PreferencesPage() {
                       </Badge>
                     </div>
                     <CardContent className="p-5 space-y-4">
-                      {Array.from({ length: activeForm.preferencesPerSemester || 3 }).map((_, idx) => (
+                      {Array.from({ length: slotsNeeded }).map((_, idx) => (
                         <div key={`PW-${idx}`} className="space-y-1.5">
                           <label className="text-sm font-medium text-slate-600 flex items-center">
                             <span className="flex-shrink-0 w-6 h-6 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-xs font-bold mr-2 border border-amber-200">

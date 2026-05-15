@@ -27,6 +27,7 @@ const AdminPreferenceFormPage = () => {
     name: '',
     description: '',
     preferencesPerSemester: 3,
+    semesterPreferences: { Even: 3, Odd: 3 },
     maxSubjectsPerTeacher: 1,
     teachersPerSubject: 1,
     includedSemesters: ['Even', 'Odd'],
@@ -89,6 +90,16 @@ const AdminPreferenceFormPage = () => {
     }
   };
 
+  const handleSemesterPrefChange = (semester, value) => {
+    setFormData(prev => ({
+      ...prev,
+      semesterPreferences: {
+        ...prev.semesterPreferences,
+        [semester]: parseInt(value) || 1,
+      }
+    }));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -102,11 +113,29 @@ const AdminPreferenceFormPage = () => {
       return;
     }
 
-    // Validate if there are enough subjects in the database for the included semesters
-    for (const sem of formData.includedSemesters) {
-      const subjectCount = subjects.filter(s => s.semester === sem).length;
-      if (subjectCount < formData.preferencesPerSemester) {
-        toast.error(`Not enough subjects for ${sem} semester to cover ${formData.preferencesPerSemester} preferences. Available: ${subjectCount}`);
+    if (formData.includedSemesters.length === 0) {
+      toast.error('Please select at least one semester type');
+      return;
+    }
+
+    let availableSems = [];
+    if (formData.includedSemesters.includes('Odd')) availableSems.push(1, 3, 5, 7);
+    if (formData.includedSemesters.includes('Even')) availableSems.push(2, 4, 6, 8);
+    
+    let semsToCheck = Object.keys(formData.semesterPreferences || {})
+      .map(Number)
+      .filter(num => availableSems.includes(num));
+
+    if (semsToCheck.length === 0) {
+      toast.error('Please select at least one specific semester number to include');
+      return;
+    }
+    for (const semNum of semsToCheck) {
+      const subjectCount = subjects.filter(s => s.semesterNumber === semNum && !s.professionalElective && !s.projectWork).length;
+      const neededPrefs = formData.semesterPreferences?.[semNum] !== undefined ? formData.semesterPreferences[semNum] : (formData.preferencesPerSemester || 0);
+      
+      if (neededPrefs > 0 && subjectCount < neededPrefs) {
+        toast.error(`Not enough core subjects in Sem ${semNum} to cover ${neededPrefs} preferences. Available: ${subjectCount}`);
         return;
       }
     }
@@ -135,6 +164,7 @@ const AdminPreferenceFormPage = () => {
       name: form.name,
       description: form.description || '',
       preferencesPerSemester: form.preferencesPerSemester,
+      semesterPreferences: form.semesterPreferences || { Even: form.preferencesPerSemester || 3, Odd: form.preferencesPerSemester || 3 },
       maxSubjectsPerTeacher: form.maxSubjectsPerTeacher || 1,
       teachersPerSubject: form.teachersPerSubject || 1,
       includedSemesters: form.includedSemesters,
@@ -199,6 +229,30 @@ const AdminPreferenceFormPage = () => {
     if (selectedSubjectIds.length === 0) {
       toast.error('Please select at least one subject');
       return;
+    }
+
+    let availableSems = [];
+    if (selectedFormForSubjects.includedSemesters.includes('Odd')) availableSems.push(1, 3, 5, 7);
+    if (selectedFormForSubjects.includedSemesters.includes('Even')) availableSems.push(2, 4, 6, 8);
+
+    let semsToCheck = Object.keys(selectedFormForSubjects.semesterPreferences || {})
+      .map(Number)
+      .filter(num => availableSems.includes(num));
+
+    for (const semNum of semsToCheck) {
+      const neededPrefs = selectedFormForSubjects.semesterPreferences?.[semNum] !== undefined ? selectedFormForSubjects.semesterPreferences[semNum] : (selectedFormForSubjects.preferencesPerSemester || 0);
+      
+      if (neededPrefs > 0) {
+        const selectedForSem = selectedSubjectIds.filter(id => {
+          const s = subjects.find(sub => sub._id === id);
+          return s && s.semesterNumber === semNum && !s.professionalElective && !s.projectWork;
+        }).length;
+
+        if (selectedForSem < neededPrefs) {
+          toast.error(`Please select at least ${neededPrefs} core subjects for Sem ${semNum}.`);
+          return;
+        }
+      }
     }
 
     setAddingSubjects(true);
@@ -464,21 +518,104 @@ const AdminPreferenceFormPage = () => {
                     />
                   </div>
 
+                  <div className="space-y-3">
+                    <Label>Semesters to Include *</Label>
+                    <div className="flex flex-wrap gap-4">
+                      <label className="flex items-center space-x-2 bg-slate-50 py-2 px-4 rounded-md border border-slate-200 cursor-pointer hover:bg-slate-100">
+                        <input
+                          type="checkbox"
+                          name="includedSemesters"
+                          value="Even"
+                          className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-600"
+                          checked={formData.includedSemesters.includes('Even')}
+                          onChange={handleInputChange}
+                        />
+                        <span className="text-sm font-medium">📅 Even Semesters</span>
+                      </label>
+                      <label className="flex items-center space-x-2 bg-slate-50 py-2 px-4 rounded-md border border-slate-200 cursor-pointer hover:bg-slate-100">
+                        <input
+                          type="checkbox"
+                          name="includedSemesters"
+                          value="Odd"
+                          className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-600"
+                          checked={formData.includedSemesters.includes('Odd')}
+                          onChange={handleInputChange}
+                        />
+                        <span className="text-sm font-medium">📅 Odd Semesters</span>
+                      </label>
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 p-4 rounded-lg border border-slate-100">
-                    <div className="space-y-2">
-                      <Label htmlFor="preferencesPerSemester">Preferences per Semester *</Label>
-                      <Input
-                        id="preferencesPerSemester"
-                        type="number"
-                        name="preferencesPerSemester"
-                        value={formData.preferencesPerSemester}
-                        onChange={handleInputChange}
-                        min="1"
-                        max="10"
-                        required
-                        className="bg-white"
-                      />
-                      <p className="text-xs text-muted-foreground">E.g., 3 choices for Even, 3 for Odd</p>
+                    <div className="space-y-4">
+                      {(() => {
+                        let availableSems = [];
+                        if (formData.includedSemesters.includes('Odd')) availableSems.push(1, 3, 5, 7);
+                        if (formData.includedSemesters.includes('Even')) availableSems.push(2, 4, 6, 8);
+                        availableSems.sort((a, b) => a - b);
+
+                        if (availableSems.length === 0) {
+                          return <p className="text-sm text-amber-600">Please select a semester type above.</p>;
+                        }
+
+                        // Determine selected numbers
+                        const selectedSems = Object.keys(formData.semesterPreferences || {})
+                          .map(Number)
+                          .filter(n => availableSems.includes(n));
+
+                        return (
+                          <>
+                            <div className="space-y-2">
+                              <Label>Select Specific Semesters *</Label>
+                              <div className="flex flex-wrap gap-2">
+                                {availableSems.map(num => {
+                                  const isSelected = selectedSems.includes(num);
+                                  return (
+                                    <Button
+                                      key={num}
+                                      type="button"
+                                      onClick={() => {
+                                        const newPrefs = { ...formData.semesterPreferences };
+                                        if (isSelected) {
+                                          delete newPrefs[num];
+                                        } else {
+                                          newPrefs[num] = formData.preferencesPerSemester || 1;
+                                        }
+                                        setFormData({ ...formData, semesterPreferences: newPrefs });
+                                      }}
+                                      variant={isSelected ? 'default' : 'outline'}
+                                      size="sm"
+                                      className="h-10 w-12 text-base"
+                                    >
+                                      {num}
+                                    </Button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {selectedSems.length > 0 && (
+                              <div className="space-y-3 pt-2">
+                                <Label>Preferences per Semester *</Label>
+                                {selectedSems.sort((a,b)=>a-b).map(semNum => (
+                                  <div key={semNum} className="flex items-center gap-3">
+                                    <Label className="w-16 font-medium text-slate-600">Sem {semNum}:</Label>
+                                    <Input
+                                      type="number"
+                                      value={formData.semesterPreferences[semNum] || ''}
+                                      onChange={(e) => handleSemesterPrefChange(semNum, e.target.value)}
+                                      min="1"
+                                      max="20"
+                                      required
+                                      className="bg-white flex-1"
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
 
                     <div className="space-y-2">
@@ -633,33 +770,6 @@ const AdminPreferenceFormPage = () => {
                     </div>
                   )}
 
-                  <div className="space-y-3">
-                    <Label>Semesters to Include *</Label>
-                    <div className="flex flex-wrap gap-4">
-                      <label className="flex items-center space-x-2 bg-slate-50 py-2 px-4 rounded-md border border-slate-200 cursor-pointer hover:bg-slate-100">
-                        <input
-                          type="checkbox"
-                          name="includedSemesters"
-                          value="Even"
-                          className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-600"
-                          checked={formData.includedSemesters.includes('Even')}
-                          onChange={handleInputChange}
-                        />
-                        <span className="text-sm font-medium">📅 Even Semesters</span>
-                      </label>
-                      <label className="flex items-center space-x-2 bg-slate-50 py-2 px-4 rounded-md border border-slate-200 cursor-pointer hover:bg-slate-100">
-                        <input
-                          type="checkbox"
-                          name="includedSemesters"
-                          value="Odd"
-                          className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-600"
-                          checked={formData.includedSemesters.includes('Odd')}
-                          onChange={handleInputChange}
-                        />
-                        <span className="text-sm font-medium">📅 Odd Semesters</span>
-                      </label>
-                    </div>
-                  </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 p-4 rounded-lg border border-slate-100">
                     <div className="space-y-2">
