@@ -48,6 +48,11 @@ const subjectSchema = new mongoose.Schema(
       trim: true,
       default: '',
     },
+    projectWork: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
   },
   {
     timestamps: true,

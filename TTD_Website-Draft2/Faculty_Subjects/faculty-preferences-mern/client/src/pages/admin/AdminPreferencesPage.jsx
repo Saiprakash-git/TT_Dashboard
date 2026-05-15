@@ -62,7 +62,8 @@ const AdminPreferencesPage = () => {
     const results = [];
 
     // Flatten preferences - each preference item carries rank and program
-    allPreferences.forEach(preference => {
+    // Skip orphaned preferences where the teacher has been deleted
+    allPreferences.filter(p => p.teacher && p.teacher._id).forEach(preference => {
       preference.preferences?.forEach((p, index) => {
         let subjectObj = p.subject;
         const subjectId = typeof subjectObj === 'string' ? subjectObj : subjectObj?._id;
@@ -86,6 +87,7 @@ const AdminPreferencesPage = () => {
           subjectSemesterType: subjectObj?.semester || '',
           subjectSemesterNumber: subjectObj?.semesterNumber || null,
           isPE: subjectObj?.professionalElective || false,
+          isProject: subjectObj?.projectWork || false,
           peGroupName: subjectObj?.peGroupName || p.peGroupName || '',
           rank: p.rank || index + 1,
           program: p.program,
@@ -331,6 +333,9 @@ const AdminPreferencesPage = () => {
                             <span className="text-xs text-slate-500">Sem {row.subjectSemesterNumber || row.subjectSemesterType}</span>
                             {row.isPE && row.peGroupName && (
                               <span className="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-200">{row.peGroupName}</span>
+                            )}
+                            {row.isProject && (
+                              <span className="text-[10px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded border border-amber-200">Project</span>
                             )}
                           </div>
                         </td>

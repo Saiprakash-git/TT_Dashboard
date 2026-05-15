@@ -12,7 +12,7 @@ export const getAllocations = async (req, res, next) => {
     const filter = academicYear ? { academicYear } : {};
 
     const allocations = await Allocation.find(filter)
-      .populate('subject', 'name code credits semester semesterNumber program professionalElective peGroupName')
+      .populate('subject', 'name code credits semester semesterNumber program professionalElective peGroupName projectWork')
       .populate('teacher', 'fullName email department designation facultyId')
       .populate('allocatedBy', 'fullName email')
       .sort({ createdAt: -1 })
@@ -34,7 +34,7 @@ export const getAllocations = async (req, res, next) => {
 export const getMyAllocations = async (req, res, next) => {
   try {
     const allocations = await Allocation.find({ teacher: req.user.id })
-      .populate('subject', 'name code credits semester semesterNumber program description professionalElective peGroupName')
+      .populate('subject', 'name code credits semester semesterNumber program description professionalElective peGroupName projectWork')
       .populate('allocatedBy', 'fullName')
       .sort({ createdAt: -1 })
       .lean();
@@ -151,7 +151,7 @@ export const allocateSubjects = async (req, res, next) => {
 
     // Fetch and return all allocations
     const savedAllocations = await Allocation.find({ academicYear: year })
-      .populate('subject', 'name code credits semester semesterNumber program professionalElective peGroupName')
+      .populate('subject', 'name code credits semester semesterNumber program professionalElective peGroupName projectWork')
       .populate('teacher', 'fullName email department designation facultyId')
       .populate('allocatedBy', 'fullName')
       .lean();

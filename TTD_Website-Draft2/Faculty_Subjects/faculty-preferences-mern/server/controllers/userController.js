@@ -1,5 +1,7 @@
 import User from '../models/User.js';
 import Allocation from '../models/Allocation.js';
+import Preference from '../models/Preference.js';
+import PreferenceForm from '../models/PreferenceForm.js';
 import bcrypt from 'bcryptjs';
 
 // @desc    Create teacher (Admin only)
@@ -226,6 +228,15 @@ export const deleteUser = async (req, res, next) => {
         { teacher: replacementTeacherId }
       );
     }
+
+    // Delete the user's preferences (cascade cleanup)
+    await Preference.deleteMany({ teacher: id });
+
+    // Remove user from any PreferenceForm's submittedTeachers array
+    await PreferenceForm.updateMany(
+      { submittedTeachers: id },
+      { $pull: { submittedTeachers: id } }
+    );
 
     // Delete the user
     await user.deleteOne();

@@ -17,7 +17,7 @@ const preferenceSchema = new mongoose.Schema(
         },
         program: {
           type: String,
-          enum: ['B.E/B.Tech', 'M.Tech', 'Professional Elective'],
+          enum: ['B.E/B.Tech', 'M.Tech', 'Professional Elective', 'Project Work'],
           required: true,
         },
         semester: {

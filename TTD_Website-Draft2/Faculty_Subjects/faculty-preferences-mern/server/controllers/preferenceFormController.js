@@ -10,7 +10,7 @@ export const getPreferenceForms = async (req, res, next) => {
   try {
     const forms = await PreferenceForm.find()
       .populate('createdBy', 'fullName email facultyId')
-      .populate('subjects.subjectIds', 'code name semester semesterNumber program credits professionalElective peGroupName')
+      .populate('subjects.subjectIds', 'code name semester semesterNumber program credits professionalElective peGroupName projectWork')
       .sort({ createdAt: -1 });
 
     res.status(200).json({
@@ -30,7 +30,7 @@ export const getPreferenceForm = async (req, res, next) => {
   try {
     const form = await PreferenceForm.findById(req.params.id)
       .populate('createdBy', 'fullName email facultyId')
-      .populate('subjects.subjectIds', 'code name semester semesterNumber program credits professionalElective peGroupName')
+      .populate('subjects.subjectIds', 'code name semester semesterNumber program credits professionalElective peGroupName projectWork')
       .populate('submittedTeachers', 'fullName facultyId email');
 
     if (!form) {
@@ -283,7 +283,7 @@ export const addSubjectsToForm = async (req, res, next) => {
     }
 
     await form.save();
-    await form.populate('subjects.subjectIds', 'code name semester semesterNumber program credits professionalElective peGroupName');
+    await form.populate('subjects.subjectIds', 'code name semester semesterNumber program credits professionalElective peGroupName projectWork');
 
     res.status(200).json({
       success: true,

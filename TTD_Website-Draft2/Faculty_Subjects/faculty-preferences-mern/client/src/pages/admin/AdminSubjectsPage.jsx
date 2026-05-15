@@ -29,6 +29,7 @@ const AdminSubjectsPage = () => {
     program: 'B.E/B.Tech',
     professionalElective: false,
     peGroupName: '',
+    projectWork: false,
   });
   const [peGroups, setPeGroups] = useState({}); // { semesterNumber: ['PE1', 'PE2', ...] }
   const [showNewPeInput, setShowNewPeInput] = useState(false);
@@ -98,6 +99,7 @@ const AdminSubjectsPage = () => {
       program: subject.program || 'B.E/B.Tech',
       professionalElective: Boolean(subject.professionalElective),
       peGroupName: subject.peGroupName || '',
+      projectWork: Boolean(subject.projectWork),
     });
     setShowNewPeInput(false);
     setNewPeGroupName('');
@@ -129,6 +131,7 @@ const AdminSubjectsPage = () => {
       program: 'B.E/B.Tech',
       professionalElective: false,
       peGroupName: '',
+      projectWork: false,
     });
     setShowNewPeInput(false);
     setNewPeGroupName('');
@@ -352,6 +355,8 @@ const AdminSubjectsPage = () => {
                                     <Badge variant="outline" className="text-emerald-600 border-emerald-300 bg-emerald-50/50 text-xs">{subject.peGroupName}</Badge>
                                   )}
                                 </div>
+                              ) : subject.projectWork ? (
+                                <Badge className="bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100">Project Work</Badge>
                               ) : (
                                 <Badge variant="outline" className="text-slate-500 bg-slate-50">Core</Badge>
                               )}
@@ -500,11 +505,20 @@ const AdminSubjectsPage = () => {
                           type="checkbox"
                           className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
                           checked={formData.professionalElective}
-                          onChange={(e) => setFormData({ ...formData, professionalElective: e.target.checked, peGroupName: e.target.checked ? formData.peGroupName : '' })}
+                          onChange={(e) => setFormData({ ...formData, professionalElective: e.target.checked, peGroupName: e.target.checked ? formData.peGroupName : '', projectWork: false })}
                         />
                         <span className="text-sm font-medium">Professional Elective</span>
                       </label>
-                      <p className="text-xs text-muted-foreground ml-6">Mark this subject as an elective</p>
+                      <label className="flex items-center space-x-2 cursor-pointer mt-2">
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-600"
+                          checked={formData.projectWork}
+                          onChange={(e) => setFormData({ ...formData, projectWork: e.target.checked, professionalElective: false, peGroupName: '' })}
+                        />
+                        <span className="text-sm font-medium">Project Work</span>
+                      </label>
+                      <p className="text-xs text-muted-foreground ml-6">Mark as elective or project (mutually exclusive)</p>
                     </div>
                   </div>
 

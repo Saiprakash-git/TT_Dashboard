@@ -58,7 +58,9 @@ export default function Dashboard() {
 
   const teacherCount = teachers.filter((t) => t.role === 'teacher').length;
   const subjectCount = subjects.length;
-  const preferencesSubmitted = allPreferences.length;
+  // Only count preferences where the teacher still exists (filter out orphaned records)
+  const validPreferences = allPreferences.filter(p => p.teacher && p.teacher._id);
+  const preferencesSubmitted = validPreferences.length;
   const pendingPreferences = Math.max(0, teacherCount - preferencesSubmitted);
 
   return (

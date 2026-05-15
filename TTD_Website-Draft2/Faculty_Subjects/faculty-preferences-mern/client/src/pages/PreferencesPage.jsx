@@ -78,7 +78,10 @@ export default function PreferencesPage() {
         
         if (subjectObj) {
           let key;
-          if (subjectObj.professionalElective) {
+          if (subjectObj.projectWork) {
+            // Project work: single flat key
+            key = 'ProjectWork';
+          } else if (subjectObj.professionalElective) {
             // PE key: PE|Sem X|GroupName
             const semKey = subjectObj.semesterNumber ? `Sem ${subjectObj.semesterNumber}` : 'Uncategorized';
             const groupName = subjectObj.peGroupName || 'Ungrouped';
@@ -113,7 +116,7 @@ export default function PreferencesPage() {
   const getPrograms = () => {
     const programs = new Set();
     formSubjects.forEach((s) => {
-      if (!s.professionalElective) {
+      if (!s.professionalElective && !s.projectWork) {
         programs.add(s.program);
       }
     });
@@ -123,7 +126,7 @@ export default function PreferencesPage() {
   const getSemesterNumbersForProgram = (program) => {
     const sems = new Set();
     formSubjects.forEach((s) => {
-      if (s.program === program && !s.professionalElective) {
+      if (s.program === program && !s.professionalElective && !s.projectWork) {
         sems.add(s.semesterNumber ? `Sem ${s.semesterNumber}` : 'Uncategorized');
       }
     });
@@ -135,9 +138,14 @@ export default function PreferencesPage() {
     });
   };
 
-  const filterAvailable = (program, semesterNumKey, prefs, currentIndex, peGroupName) => {
+  const filterAvailable = (program, semesterNumKey, prefs, currentIndex, peGroupName, isProjectWork) => {
     const selected = prefs.filter((id, i) => i !== currentIndex && id);
     return formSubjects.filter((s) => {
+      // Project Work filtering — all project subjects across all semesters
+      if (isProjectWork) {
+        return s.projectWork === true && !selected.includes(s._id);
+      }
+      
       // PE group filtering
       if (peGroupName) {
         return s.professionalElective === true && 
@@ -150,6 +158,7 @@ export default function PreferencesPage() {
         s.program === program &&
         sNumKey === semesterNumKey &&
         s.professionalElective !== true &&
+        s.projectWork !== true &&
         !selected.includes(s._id)
       );
     });
@@ -161,6 +170,70 @@ export default function PreferencesPage() {
       return;
     }
 
+    // === MANDATORY FIELD VALIDATION ===
+    // Build a list of all expected preference groups and check each slot is filled
+    const incompleteGroups = [];
+
+    // 1. Check core subject groups
+    programs.forEach((program) => {
+      const semesterNumKeys = getSemesterNumbersForProgram(program);
+      semesterNumKeys.forEach((semesterNumKey) => {
+        const key = `${program}|${semesterNumKey}`;
+        const prefs = preferences[key] || [];
+        const slotsNeeded = activeForm.preferencesPerSemester || 3;
+        for (let i = 0; i < slotsNeeded; i++) {
+          if (!prefs[i]) {
+            incompleteGroups.push(`${program} — ${semesterNumKey}`);
+            break;
+          }
+        }
+      });
+    });
+
+    // 2. Check PE groups
+    const peSubjects = formSubjects.filter(s => s.professionalElective === true);
+    if (peSubjects.length > 0) {
+      const semGroupMap = {};
+      peSubjects.forEach(s => {
+        const semKey = s.semesterNumber ? `Sem ${s.semesterNumber}` : 'Uncategorized';
+        const groupName = s.peGroupName || 'Ungrouped';
+        if (!semGroupMap[semKey]) semGroupMap[semKey] = new Set();
+        semGroupMap[semKey].add(groupName);
+      });
+      Object.entries(semGroupMap).forEach(([semKey, groups]) => {
+        groups.forEach(groupName => {
+          const peKey = `PE|${semKey}|${groupName}`;
+          const prefs = preferences[peKey] || [];
+          const slotsNeeded = activeForm.preferencesPerSemester || 3;
+          for (let i = 0; i < slotsNeeded; i++) {
+            if (!prefs[i]) {
+              incompleteGroups.push(`PE: ${groupName} (${semKey})`);
+              break;
+            }
+          }
+        });
+      });
+    }
+
+    // 3. Check Project Work
+    const projectSubjects = formSubjects.filter(s => s.projectWork === true);
+    if (projectSubjects.length > 0) {
+      const pwPrefs = preferences['ProjectWork'] || [];
+      const slotsNeeded = activeForm.preferencesPerSemester || 3;
+      for (let i = 0; i < slotsNeeded; i++) {
+        if (!pwPrefs[i]) {
+          incompleteGroups.push('Project Work');
+          break;
+        }
+      }
+    }
+
+    if (incompleteGroups.length > 0) {
+      toast.error(`Please fill all preference slots. Incomplete: ${incompleteGroups.join(', ')}`);
+      return;
+    }
+    // === END VALIDATION ===
+
     const allPreferences = [];
     
     // We must merge with global existing preferences that ARE NOT in this form. 
@@ -168,7 +241,11 @@ export default function PreferencesPage() {
     Object.entries(preferences).forEach(([key, prefs]) => {
       let program, semesterNumKey, peGroupName;
       
-      if (key.startsWith('PE|')) {
+      if (key === 'ProjectWork') {
+        program = 'Project Work';
+        semesterNumKey = 'ProjectWork';
+        peGroupName = '';
+      } else if (key.startsWith('PE|')) {
         // PE key format: PE|Sem X|GroupName
         const parts = key.split('|');
         program = 'Professional Elective';
@@ -184,7 +261,7 @@ export default function PreferencesPage() {
           const sObj = formSubjects.find(s => s._id === subjectId);
           allPreferences.push({
             subject: subjectId,
-            program: sObj ? sObj.program : program,
+            program: key === 'ProjectWork' ? 'Project Work' : (sObj ? sObj.program : program),
             semester: semesterNumKey, 
             peGroupName: peGroupName || '',
             rank: index + 1,
@@ -549,6 +626,65 @@ export default function PreferencesPage() {
                       );
                     })}
                   </div>
+                </div>
+              );
+            })()}
+
+            {/* Project Work Block — single flat list of all project subjects */}
+            {(() => {
+              const projectSubjects = formSubjects.filter(s => s.projectWork === true);
+              if (projectSubjects.length === 0) return null;
+
+              const pwPrefs = preferences['ProjectWork'] || Array(activeForm.preferencesPerSemester || 3).fill('');
+
+              return (
+                <div className="md:col-span-2">
+                  <div className="mb-4 mt-2">
+                    <h2 className="text-xl font-bold text-amber-800 flex items-center gap-2">
+                      📂 Project Work
+                    </h2>
+                    <p className="text-sm text-amber-600 mt-1">Rank your project work preferences across all semesters</p>
+                  </div>
+
+                  <Card className="border-amber-200 shadow-sm overflow-hidden">
+                    <div className="bg-amber-50 px-5 py-3 border-b border-amber-100 flex justify-between items-center">
+                      <CardTitle className="text-base font-semibold text-amber-800">
+                        All Project Work
+                      </CardTitle>
+                      <Badge variant="outline" className="text-amber-600 border-amber-300 text-xs">
+                        {projectSubjects.length} projects
+                      </Badge>
+                    </div>
+                    <CardContent className="p-5 space-y-4">
+                      {Array.from({ length: activeForm.preferencesPerSemester || 3 }).map((_, idx) => (
+                        <div key={`PW-${idx}`} className="space-y-1.5">
+                          <label className="text-sm font-medium text-slate-600 flex items-center">
+                            <span className="flex-shrink-0 w-6 h-6 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-xs font-bold mr-2 border border-amber-200">
+                              {idx + 1}
+                            </span>
+                            {idx === 0 ? 'Top Preference' : idx === 1 ? '2nd Choice' : idx === 2 ? '3rd Choice' : `${idx + 1}th Choice`}
+                          </label>
+                          <select
+                            className="w-full border-slate-200 rounded-md px-3 py-2.5 text-sm bg-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500 shadow-sm disabled:bg-slate-50 disabled:text-slate-500 transition-colors"
+                            value={pwPrefs[idx] || ''}
+                            onChange={(e) => {
+                              const next = [...pwPrefs];
+                              next[idx] = e.target.value;
+                              setPreferences({ ...preferences, 'ProjectWork': next });
+                            }}
+                            disabled={disableEditing}
+                          >
+                            <option value="">-- Select a Project --</option>
+                            {filterAvailable(null, null, pwPrefs, idx, null, true).map((subject) => (
+                              <option key={subject._id} value={subject._id}>
+                                {subject.name} (Sem {subject.semesterNumber || '?'})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
                 </div>
               );
             })()}
