@@ -3,6 +3,167 @@ import Subject from '../models/Subject.js';
 import Allocation from '../models/Allocation.js';
 import Preference from '../models/Preference.js';
 
+const PROGRAMS = ['B.E/B.Tech', 'M.Tech'];
+const SEMESTER_TYPES = ['Even', 'Odd'];
+const SEMESTER_NUMBERS_BY_TYPE = {
+  Odd: [1, 3, 5, 7],
+  Even: [2, 4, 6, 8],
+};
+
+const toPlainObject = (value) => {
+  if (!value) return {};
+  if (value instanceof Map) return Object.fromEntries(value);
+  if (typeof value.toObject === 'function') return value.toObject();
+  return value;
+};
+
+const getSettingsEntry = (settings, program) => {
+  if (!settings) return null;
+  if (Array.isArray(settings)) {
+    return settings.find((entry) => entry?.program === program) || null;
+  }
+  return settings[program] || null;
+};
+
+const getAllowedSemesterNumbers = (includedSemesters = []) => {
+  const nums = includedSemesters.flatMap((semester) => SEMESTER_NUMBERS_BY_TYPE[semester] || []);
+  return [...new Set(nums)].sort((a, b) => a - b);
+};
+
+const normalizeProgramSettings = (body = {}) => {
+  const includedPrograms = (Array.isArray(body.includedPrograms) && body.includedPrograms.length
+    ? body.includedPrograms
+    : ['B.E/B.Tech']
+  ).filter((program) => PROGRAMS.includes(program));
+
+  if (includedPrograms.length === 0) {
+    return {
+      error: 'Please select at least one valid program',
+    };
+  }
+
+  const rawSettings = body.programSettings || {};
+  const normalizedByProgram = {};
+
+  for (const program of includedPrograms) {
+    const rawEntry = toPlainObject(getSettingsEntry(rawSettings, program)) || {};
+    const shouldCopyBTech =
+      program === 'M.Tech' &&
+      rawEntry.sameAsBTech === true &&
+      includedPrograms.includes('B.E/B.Tech') &&
+      normalizedByProgram['B.E/B.Tech'];
+
+    if (shouldCopyBTech) {
+      normalizedByProgram[program] = {
+        program,
+        includedSemesters: [...normalizedByProgram['B.E/B.Tech'].includedSemesters],
+        semesterPreferences: { ...normalizedByProgram['B.E/B.Tech'].semesterPreferences },
+        sameAsBTech: true,
+      };
+      continue;
+    }
+
+    const includedSemesters = (Array.isArray(rawEntry.includedSemesters) && rawEntry.includedSemesters.length
+      ? rawEntry.includedSemesters
+      : body.includedSemesters || ['Even', 'Odd']
+    ).filter((semester) => SEMESTER_TYPES.includes(semester));
+
+    if (includedSemesters.length === 0) {
+      return {
+        error: `Please select at least one semester type for ${program}`,
+      };
+    }
+
+    const allowedSemesterNumbers = getAllowedSemesterNumbers(includedSemesters);
+    const rawPrefs = toPlainObject(rawEntry.semesterPreferences || body.semesterPreferences || {});
+    const semesterPreferences = {};
+
+    Object.entries(rawPrefs).forEach(([key, value]) => {
+      const semesterNumber = Number(key);
+      const preferenceCount = Number(value);
+      if (
+        Number.isInteger(semesterNumber) &&
+        allowedSemesterNumbers.includes(semesterNumber) &&
+        Number.isInteger(preferenceCount) &&
+        preferenceCount > 0
+      ) {
+        semesterPreferences[String(semesterNumber)] = preferenceCount;
+      }
+    });
+
+    if (Object.keys(semesterPreferences).length === 0) {
+      return {
+        error: `Please select at least one semester number for ${program}`,
+      };
+    }
+
+    normalizedByProgram[program] = {
+      program,
+      includedSemesters,
+      semesterPreferences,
+      sameAsBTech: false,
+    };
+  }
+
+  const programSettings = includedPrograms.map((program) => normalizedByProgram[program]);
+  const includedSemesters = [...new Set(programSettings.flatMap((entry) => entry.includedSemesters))];
+  const semesterPreferences = programSettings[0]?.semesterPreferences || {};
+
+  return {
+    includedPrograms,
+    includedSemesters,
+    semesterPreferences,
+    programSettings,
+  };
+};
+
+const validateProgramSubjectAvailability = async (programSettings) => {
+  for (const entry of programSettings) {
+    const semesterPreferences = toPlainObject(entry.semesterPreferences);
+    for (const [semesterNumber, preferenceCount] of Object.entries(semesterPreferences || {})) {
+      const subjectCount = await Subject.countDocuments({
+        program: entry.program,
+        semesterNumber: Number(semesterNumber),
+        professionalElective: { $ne: true },
+        projectWork: { $ne: true },
+      });
+
+      if (subjectCount === 0) {
+        return `No ${entry.program} core subjects found for Sem ${semesterNumber}`;
+      }
+
+      if (subjectCount < Number(preferenceCount)) {
+        return `Not enough ${entry.program} core subjects in Sem ${semesterNumber} to cover ${preferenceCount} preferences. Available: ${subjectCount}`;
+      }
+    }
+  }
+
+  return null;
+};
+
+const validateSelectedSubjectsForProgramSettings = async (subjectIds, programSettings) => {
+  const selectedSubjects = await Subject.find({ _id: { $in: subjectIds } }).lean();
+
+  for (const entry of programSettings) {
+    const semesterPreferences = toPlainObject(entry.semesterPreferences);
+    for (const [semesterNumber, preferenceCount] of Object.entries(semesterPreferences || {})) {
+      const selectedCount = selectedSubjects.filter(
+        (subject) =>
+          subject.program === entry.program &&
+          subject.semesterNumber === Number(semesterNumber) &&
+          subject.professionalElective !== true &&
+          subject.projectWork !== true
+      ).length;
+
+      if (selectedCount < Number(preferenceCount)) {
+        return `Please select at least ${preferenceCount} ${entry.program} core subjects for Sem ${semesterNumber}. Selected: ${selectedCount}`;
+      }
+    }
+  }
+
+  return null;
+};
+
 // @desc    Get all preference forms
 // @route   GET /api/preference-forms
 // @access  Private/Admin
@@ -54,7 +215,7 @@ export const getPreferenceForm = async (req, res, next) => {
 // @access  Private/Admin
 export const createPreferenceForm = async (req, res, next) => {
   try {
-    const { name, description, minimumPreferences, preferencesPerSemester, includedSemesters, allocationMethod, maxSubjectsPerTeacher, startsAt, endsAt, subjects } = req.body;
+    const { name, description, minimumPreferences, preferencesPerSemester, allocationMethod, maxSubjectsPerTeacher, startsAt, endsAt, subjects } = req.body;
 
     // Validate required fields
     if (!name) {
@@ -77,6 +238,22 @@ export const createPreferenceForm = async (req, res, next) => {
       return res.status(400).json({
         success: false,
         message: 'Allocation method must be either "automatic" or "manual"',
+      });
+    }
+
+    const normalizedSettings = normalizeProgramSettings(req.body);
+    if (normalizedSettings.error) {
+      return res.status(400).json({
+        success: false,
+        message: normalizedSettings.error,
+      });
+    }
+
+    const availabilityError = await validateProgramSubjectAvailability(normalizedSettings.programSettings);
+    if (availabilityError) {
+      return res.status(400).json({
+        success: false,
+        message: availabilityError,
       });
     }
 
@@ -118,8 +295,10 @@ export const createPreferenceForm = async (req, res, next) => {
       description,
       minimumPreferences: minimumPreferences || 2,
       preferencesPerSemester: preferencesPerSemester || 3,
-      semesterPreferences: req.body.semesterPreferences || {},
-      includedSemesters: includedSemesters || ['Even', 'Odd'],
+      semesterPreferences: normalizedSettings.semesterPreferences,
+      includedSemesters: normalizedSettings.includedSemesters,
+      includedPrograms: normalizedSettings.includedPrograms,
+      programSettings: normalizedSettings.programSettings,
       allocationMethod: allocationMethod || 'manual',
       maxSubjectsPerTeacher: maxSubjectsPerTeacher || 1,
       teachersPerSubject: req.body.teachersPerSubject || 1,
@@ -173,12 +352,42 @@ export const updatePreferenceForm = async (req, res, next) => {
       });
     }
 
+    let normalizedSettings = null;
+    if (req.body.includedPrograms || req.body.programSettings || req.body.includedSemesters || req.body.semesterPreferences) {
+      normalizedSettings = normalizeProgramSettings({
+        includedPrograms: req.body.includedPrograms || form.includedPrograms,
+        programSettings: req.body.programSettings || form.programSettings,
+        includedSemesters: req.body.includedSemesters || form.includedSemesters,
+        semesterPreferences: req.body.semesterPreferences || form.semesterPreferences,
+      });
+
+      if (normalizedSettings.error) {
+        return res.status(400).json({
+          success: false,
+          message: normalizedSettings.error,
+        });
+      }
+
+      const availabilityError = await validateProgramSubjectAvailability(normalizedSettings.programSettings);
+      if (availabilityError) {
+        return res.status(400).json({
+          success: false,
+          message: availabilityError,
+        });
+      }
+    }
+
     // Update fields
     if (name) form.name = name;
     if (description) form.description = description;
     if (minimumPreferences) form.minimumPreferences = minimumPreferences;
     if (preferencesPerSemester) form.preferencesPerSemester = preferencesPerSemester;
-    if (req.body.semesterPreferences) form.semesterPreferences = req.body.semesterPreferences;
+    if (normalizedSettings) {
+      form.semesterPreferences = normalizedSettings.semesterPreferences;
+      form.includedSemesters = normalizedSettings.includedSemesters;
+      form.includedPrograms = normalizedSettings.includedPrograms;
+      form.programSettings = normalizedSettings.programSettings;
+    }
     if (allocationMethod) form.allocationMethod = allocationMethod;
     if (maxSubjectsPerTeacher) form.maxSubjectsPerTeacher = maxSubjectsPerTeacher;
     if (req.body.teachersPerSubject) form.teachersPerSubject = req.body.teachersPerSubject;
@@ -273,6 +482,30 @@ export const addSubjectsToForm = async (req, res, next) => {
         success: false,
         message: `Some subjects not found for ${semester} semester`,
       });
+    }
+
+    const nextSubjectIds = form.subjects.flatMap((group) => {
+      if (group.semester === semester) {
+        return subjectIds;
+      }
+      return group.subjectIds;
+    });
+    if (!form.subjects.some((group) => group.semester === semester)) {
+      nextSubjectIds.push(...subjectIds);
+    }
+
+    if (form.programSettings?.length) {
+      const selectedSubjectsError = await validateSelectedSubjectsForProgramSettings(
+        nextSubjectIds,
+        form.programSettings
+      );
+
+      if (selectedSubjectsError) {
+        return res.status(400).json({
+          success: false,
+          message: selectedSubjectsError,
+        });
+      }
     }
 
     // Check if semester already exists in form

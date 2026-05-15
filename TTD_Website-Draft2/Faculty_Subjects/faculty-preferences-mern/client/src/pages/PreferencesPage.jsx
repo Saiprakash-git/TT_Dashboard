@@ -59,6 +59,26 @@ export default function PreferencesPage() {
     }
   };
 
+  const getProgramConfigFromForm = (form, program) => {
+    return form?.programSettings?.find(config => config.program === program) || null;
+  };
+
+  const getSlotsForSubjectInForm = (form, subject) => {
+    if (!form || !subject) return form?.preferencesPerSemester || 0;
+    const num = subject.semesterNumber?.toString();
+    const programConfig = getProgramConfigFromForm(form, subject.program);
+
+    if (programConfig?.semesterPreferences && num && programConfig.semesterPreferences[num] !== undefined) {
+      return programConfig.semesterPreferences[num];
+    }
+
+    if (form.semesterPreferences && num && form.semesterPreferences[num] !== undefined) {
+      return form.semesterPreferences[num];
+    }
+
+    return form.preferencesPerSemester || 0;
+  };
+
   const handleSelectForm = (form) => {
     setActiveForm(form);
     
@@ -85,16 +105,17 @@ export default function PreferencesPage() {
             // PE key: PE|Sem X|GroupName
             const semKey = subjectObj.semesterNumber ? `Sem ${subjectObj.semesterNumber}` : 'Uncategorized';
             const groupName = subjectObj.peGroupName || 'Ungrouped';
-            key = `PE|${semKey}|${groupName}`;
+            key = `PE|${subjectObj.program}|${semKey}|${groupName}`;
           } else {
             const semNumKey = subjectObj.semesterNumber ? `Sem ${subjectObj.semesterNumber}` : 'Uncategorized';
             key = `${subjectObj.program}|${semNumKey}`;
           }
           
+          const slotsNeeded = getSlotsForSubjectInForm(form, subjectObj);
           if (!prefsMap[key]) {
-            prefsMap[key] = Array(form?.preferencesPerSemester || 3).fill('');
+            prefsMap[key] = Array(slotsNeeded).fill('');
           }
-          if (p.rank >= 1 && p.rank <= (form?.preferencesPerSemester || 3)) {
+          if (p.rank >= 1 && p.rank <= slotsNeeded) {
             prefsMap[key][p.rank - 1] = subjectId;
           }
         }
@@ -120,7 +141,10 @@ export default function PreferencesPage() {
         programs.add(s.program);
       }
     });
-    return Array.from(programs);
+    const configuredPrograms = activeForm?.includedPrograms?.length
+      ? activeForm.includedPrograms
+      : ['B.E/B.Tech', 'M.Tech'];
+    return configuredPrograms.filter(program => programs.has(program));
   };
 
   const getSemesterNumbersForProgram = (program) => {
@@ -144,13 +168,22 @@ export default function PreferencesPage() {
     if (isProjectWork) {
       subject = formSubjects.find(s => s.projectWork === true);
     } else if (peGroupName) {
-      subject = formSubjects.find(s => s.professionalElective === true && (s.peGroupName || 'Ungrouped') === peGroupName && (s.semesterNumber ? `Sem ${s.semesterNumber}` : 'Uncategorized') === semesterNumKey);
+      subject = formSubjects.find(s =>
+        s.professionalElective === true &&
+        (!program || s.program === program) &&
+        (s.peGroupName || 'Ungrouped') === peGroupName &&
+        (s.semesterNumber ? `Sem ${s.semesterNumber}` : 'Uncategorized') === semesterNumKey
+      );
     } else {
       subject = formSubjects.find(s => s.program === program && (s.semesterNumber ? `Sem ${s.semesterNumber}` : 'Uncategorized') === semesterNumKey && s.professionalElective !== true && s.projectWork !== true);
     }
     
     if (subject && subject.semesterNumber !== undefined) {
       const num = subject.semesterNumber.toString();
+      const programConfig = getProgramConfigFromForm(activeForm, subject.program);
+      if (programConfig?.semesterPreferences && programConfig.semesterPreferences[num] !== undefined) {
+        return programConfig.semesterPreferences[num];
+      }
       if (activeForm.semesterPreferences && activeForm.semesterPreferences[num] !== undefined) {
         return activeForm.semesterPreferences[num];
       }
@@ -169,8 +202,11 @@ export default function PreferencesPage() {
       
       // PE group filtering
       if (peGroupName) {
+        const sNumKey = s.semesterNumber ? `Sem ${s.semesterNumber}` : 'Uncategorized';
         return s.professionalElective === true && 
                (s.peGroupName || 'Ungrouped') === peGroupName &&
+               (!program || s.program === program) &&
+               (!semesterNumKey || sNumKey === semesterNumKey) &&
                !selected.includes(s._id);
       }
       
@@ -216,19 +252,22 @@ export default function PreferencesPage() {
     if (peSubjects.length > 0) {
       const semGroupMap = {};
       peSubjects.forEach(s => {
+        const program = s.program || 'Program';
         const semKey = s.semesterNumber ? `Sem ${s.semesterNumber}` : 'Uncategorized';
         const groupName = s.peGroupName || 'Ungrouped';
-        if (!semGroupMap[semKey]) semGroupMap[semKey] = new Set();
-        semGroupMap[semKey].add(groupName);
+        const programSemKey = `${program}|${semKey}`;
+        if (!semGroupMap[programSemKey]) semGroupMap[programSemKey] = new Set();
+        semGroupMap[programSemKey].add(groupName);
       });
-      Object.entries(semGroupMap).forEach(([semKey, groups]) => {
+      Object.entries(semGroupMap).forEach(([programSemKey, groups]) => {
+        const [program, semKey] = programSemKey.split('|');
         groups.forEach(groupName => {
-          const peKey = `PE|${semKey}|${groupName}`;
+          const peKey = `PE|${program}|${semKey}|${groupName}`;
           const prefs = preferences[peKey] || [];
-          const slotsNeeded = getSlotsNeeded(null, semKey, groupName, false);
+          const slotsNeeded = getSlotsNeeded(program, semKey, groupName, false);
           for (let i = 0; i < slotsNeeded; i++) {
             if (!prefs[i]) {
-              incompleteGroups.push(`PE: ${groupName} (${semKey})`);
+              incompleteGroups.push(`${program} PE: ${groupName} (${semKey})`);
               break;
             }
           }
@@ -267,11 +306,16 @@ export default function PreferencesPage() {
         semesterNumKey = 'ProjectWork';
         peGroupName = '';
       } else if (key.startsWith('PE|')) {
-        // PE key format: PE|Sem X|GroupName
         const parts = key.split('|');
-        program = 'Professional Elective';
-        semesterNumKey = parts[1]; // e.g. 'Sem 3'
-        peGroupName = parts[2]; // e.g. 'PE1'
+        if (parts.length >= 4) {
+          program = parts[1];
+          semesterNumKey = parts[2];
+          peGroupName = parts[3];
+        } else {
+          program = 'Professional Elective';
+          semesterNumKey = parts[1];
+          peGroupName = parts[2];
+        }
       } else {
         [program, semesterNumKey] = key.split('|');
         peGroupName = '';
@@ -557,19 +601,24 @@ export default function PreferencesPage() {
               // Group PE subjects by semester number, then by PE group name
               const semGroupMap = {};
               peSubjects.forEach(s => {
+                const program = s.program || 'Program';
                 const semKey = s.semesterNumber ? `Sem ${s.semesterNumber}` : 'Uncategorized';
                 const groupName = s.peGroupName || 'Ungrouped';
-                if (!semGroupMap[semKey]) semGroupMap[semKey] = {};
-                if (!semGroupMap[semKey][groupName]) semGroupMap[semKey][groupName] = [];
-                semGroupMap[semKey][groupName].push(s);
+                const programSemKey = `${program}|${semKey}`;
+                if (!semGroupMap[programSemKey]) semGroupMap[programSemKey] = {};
+                if (!semGroupMap[programSemKey][groupName]) semGroupMap[programSemKey][groupName] = [];
+                semGroupMap[programSemKey][groupName].push(s);
               });
 
               // Sort semester keys
               const sortedSemKeys = Object.keys(semGroupMap).sort((a, b) => {
-                if (a === 'Uncategorized') return 1;
-                if (b === 'Uncategorized') return -1;
-                const numA = parseInt(a.replace('Sem ', ''));
-                const numB = parseInt(b.replace('Sem ', ''));
+                const [programA, semA] = a.split('|');
+                const [programB, semB] = b.split('|');
+                if (programA !== programB) return programA.localeCompare(programB);
+                if (semA === 'Uncategorized') return 1;
+                if (semB === 'Uncategorized') return -1;
+                const numA = parseInt(semA.replace('Sem ', ''));
+                const numB = parseInt(semB.replace('Sem ', ''));
                 return numA - numB;
               });
 
@@ -583,23 +632,24 @@ export default function PreferencesPage() {
                   </div>
                   
                   <div className="space-y-6">
-                    {sortedSemKeys.map(semKey => {
-                      const groups = semGroupMap[semKey];
+                    {sortedSemKeys.map(programSemKey => {
+                      const [program, semKey] = programSemKey.split('|');
+                      const groups = semGroupMap[programSemKey];
                       const sortedGroupNames = Object.keys(groups).sort();
 
                       return (
-                        <div key={semKey}>
+                        <div key={programSemKey}>
                           <div className="flex items-center gap-2 mb-3">
                             <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-sm px-3 py-1">
-                              {semKey}
+                              {program} - {semKey}
                             </Badge>
                             <div className="h-px flex-grow bg-emerald-200" />
                           </div>
                           
                           <div className="grid gap-4 md:grid-cols-2">
                             {sortedGroupNames.map(groupName => {
-                              const peKey = `PE|${semKey}|${groupName}`;
-                              const slotsNeeded = getSlotsNeeded(null, semKey, groupName, false);
+                              const peKey = `PE|${program}|${semKey}|${groupName}`;
+                              const slotsNeeded = getSlotsNeeded(program, semKey, groupName, false);
                               const prefs = preferences[peKey] || Array(slotsNeeded).fill('');
 
                               return (
@@ -632,7 +682,7 @@ export default function PreferencesPage() {
                                           disabled={disableEditing}
                                         >
                                           <option value="">-- Select an Elective --</option>
-                                          {filterAvailable(null, null, prefs, idx, groupName).map((subject) => (
+                                          {filterAvailable(program, semKey, prefs, idx, groupName).map((subject) => (
                                             <option key={subject._id} value={subject._id}>
                                               {subject.code} - {subject.name} ({subject.credits} cr)
                                             </option>

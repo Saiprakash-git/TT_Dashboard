@@ -113,9 +113,9 @@ export const savePreference = async (req, res, next) => {
       // For Project Work, use a single key since all projects are in one flat list
       let rankKey;
       if (p.program === 'Project Work') {
-        rankKey = 'ProjectWork';
+        rankKey = `ProjectWork:${p.semester || 'none'}`;
       } else if (p.peGroupName) {
-        rankKey = `PE:${p.semester || 'none'}:${p.peGroupName}`;
+        rankKey = `PE:${p.program}:${p.semester || 'none'}:${p.peGroupName}`;
       } else {
         rankKey = `${p.program}:${p.semester || 'none'}`;
       }

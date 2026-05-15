@@ -9,6 +9,63 @@ import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Plus, CheckCircle2, Play, Square, Edit2, Trash2, CalendarDays, BookOpen, Settings, Clock, AlertTriangle, XCircle, Info } from 'lucide-react';
 
+const PROGRAM_OPTIONS = [
+  { value: 'B.E/B.Tech', label: 'BTech' },
+  { value: 'M.Tech', label: 'MTech' },
+];
+
+const PROGRAM_ORDER = PROGRAM_OPTIONS.map(option => option.value);
+
+const createEmptyProgramSettings = () => ({
+  'B.E/B.Tech': {
+    includedSemesters: ['Even', 'Odd'],
+    semesterPreferences: {},
+    sameAsBTech: false,
+  },
+  'M.Tech': {
+    includedSemesters: ['Even', 'Odd'],
+    semesterPreferences: {},
+    sameAsBTech: false,
+  },
+});
+
+const getSemesterNumbersForTypes = (semesterTypes = []) => {
+  const numbers = [];
+  if (semesterTypes.includes('Odd')) numbers.push(1, 3, 5, 7);
+  if (semesterTypes.includes('Even')) numbers.push(2, 4, 6, 8);
+  return [...new Set(numbers)].sort((a, b) => a - b);
+};
+
+const programSettingsArrayToState = (settings, fallbackSemesters, fallbackPrefs, defaultCount) => {
+  const state = createEmptyProgramSettings();
+
+  if (Array.isArray(settings) && settings.length > 0) {
+    settings.forEach(entry => {
+      if (entry?.program && state[entry.program]) {
+        state[entry.program] = {
+          includedSemesters: entry.includedSemesters?.length ? entry.includedSemesters : fallbackSemesters,
+          semesterPreferences: entry.semesterPreferences || {},
+          sameAsBTech: Boolean(entry.sameAsBTech),
+        };
+      }
+    });
+    return state;
+  }
+
+  state['B.E/B.Tech'] = {
+    includedSemesters: fallbackSemesters?.length ? fallbackSemesters : ['Even', 'Odd'],
+    semesterPreferences: fallbackPrefs || {},
+    sameAsBTech: false,
+  };
+  state['M.Tech'] = {
+    includedSemesters: fallbackSemesters?.length ? fallbackSemesters : ['Even', 'Odd'],
+    semesterPreferences: fallbackPrefs || {},
+    sameAsBTech: true,
+  };
+
+  return state;
+};
+
 const AdminPreferenceFormPage = () => {
   const [forms, setForms] = useState([]);
   const [subjects, setSubjects] = useState([]);
@@ -28,6 +85,8 @@ const AdminPreferenceFormPage = () => {
     description: '',
     preferencesPerSemester: 3,
     semesterPreferences: { Even: 3, Odd: 3 },
+    includedPrograms: ['B.E/B.Tech'],
+    programSettings: createEmptyProgramSettings(),
     maxSubjectsPerTeacher: 1,
     teachersPerSubject: 1,
     includedSemesters: ['Even', 'Odd'],
@@ -62,7 +121,14 @@ const AdminPreferenceFormPage = () => {
   };
 
   const getSubjectsForSemester = (semester) => {
-    return subjects.filter(s => s.semester === semester && (!selectedSemesterNumber || s.semesterNumber === selectedSemesterNumber));
+    const allowedPrograms = selectedFormForSubjects?.includedPrograms?.length
+      ? selectedFormForSubjects.includedPrograms
+      : PROGRAM_ORDER;
+    return subjects.filter(s =>
+      allowedPrograms.includes(s.program) &&
+      s.semester === semester &&
+      (!selectedSemesterNumber || s.semesterNumber === selectedSemesterNumber)
+    );
   };
 
   const getSemesterNumbers = () => {
@@ -100,6 +166,231 @@ const AdminPreferenceFormPage = () => {
     }));
   };
 
+  const getEffectiveProgramSettings = (data = formData) => {
+    const settings = { ...data.programSettings };
+    if (
+      data.includedPrograms.includes('B.E/B.Tech') &&
+      data.includedPrograms.includes('M.Tech') &&
+      settings['M.Tech']?.sameAsBTech
+    ) {
+      settings['M.Tech'] = {
+        ...settings['M.Tech'],
+        includedSemesters: [...(settings['B.E/B.Tech']?.includedSemesters || [])],
+        semesterPreferences: { ...(settings['B.E/B.Tech']?.semesterPreferences || {}) },
+      };
+    }
+    return settings;
+  };
+
+  const serializeProgramSettings = (data = formData) => {
+    const effectiveSettings = getEffectiveProgramSettings(data);
+    return data.includedPrograms.map(program => ({
+      program,
+      includedSemesters: effectiveSettings[program]?.includedSemesters || [],
+      semesterPreferences: effectiveSettings[program]?.semesterPreferences || {},
+      sameAsBTech: Boolean(data.programSettings?.[program]?.sameAsBTech),
+    }));
+  };
+
+  const getSelectedSemesterNumbersForProgram = (program, data = formData) => {
+    const effectiveSettings = getEffectiveProgramSettings(data);
+    const config = effectiveSettings[program] || {};
+    const availableSems = getSemesterNumbersForTypes(config.includedSemesters || []);
+    return Object.keys(config.semesterPreferences || {})
+      .map(Number)
+      .filter(num => availableSems.includes(num))
+      .sort((a, b) => a - b);
+  };
+
+  const buildSubmitPayload = () => {
+    const programSettings = serializeProgramSettings();
+    const includedSemesters = [...new Set(programSettings.flatMap(config => config.includedSemesters))];
+    const semesterPreferences = programSettings[0]?.semesterPreferences || {};
+    const preferencesPerSemester =
+      Number(Object.values(semesterPreferences)[0]) ||
+      Number(formData.preferencesPerSemester) ||
+      1;
+
+    return {
+      ...formData,
+      preferencesPerSemester,
+      includedSemesters,
+      semesterPreferences,
+      programSettings,
+    };
+  };
+
+  const handleProgramToggle = (program, checked) => {
+    setFormData(prev => {
+      const includedPrograms = checked
+        ? [...new Set([...prev.includedPrograms, program])].sort((a, b) => PROGRAM_ORDER.indexOf(a) - PROGRAM_ORDER.indexOf(b))
+        : prev.includedPrograms.filter(item => item !== program);
+
+      return {
+        ...prev,
+        includedPrograms,
+      };
+    });
+  };
+
+  const handleProgramSemesterToggle = (program, semester, checked) => {
+    setFormData(prev => {
+      const current = prev.programSettings[program] || { includedSemesters: [], semesterPreferences: {} };
+      const includedSemesters = checked
+        ? [...new Set([...current.includedSemesters, semester])]
+        : current.includedSemesters.filter(item => item !== semester);
+      const availableSems = getSemesterNumbersForTypes(includedSemesters);
+      const semesterPreferences = {};
+
+      Object.entries(current.semesterPreferences || {}).forEach(([semNum, count]) => {
+        if (availableSems.includes(Number(semNum))) {
+          semesterPreferences[semNum] = count;
+        }
+      });
+
+      return {
+        ...prev,
+        programSettings: {
+          ...prev.programSettings,
+          [program]: {
+            ...current,
+            includedSemesters,
+            semesterPreferences,
+          },
+        },
+      };
+    });
+  };
+
+  const handleProgramSemesterNumberToggle = (program, semNum) => {
+    setFormData(prev => {
+      const current = prev.programSettings[program] || { includedSemesters: [], semesterPreferences: {} };
+      const semesterPreferences = { ...(current.semesterPreferences || {}) };
+      if (semesterPreferences[semNum] !== undefined) {
+        delete semesterPreferences[semNum];
+      } else {
+        semesterPreferences[semNum] = prev.preferencesPerSemester || 1;
+      }
+
+      return {
+        ...prev,
+        programSettings: {
+          ...prev.programSettings,
+          [program]: {
+            ...current,
+            semesterPreferences,
+          },
+        },
+      };
+    });
+  };
+
+  const handleProgramPrefChange = (program, semNum, value) => {
+    setFormData(prev => {
+      const current = prev.programSettings[program] || { includedSemesters: [], semesterPreferences: {} };
+      return {
+        ...prev,
+        programSettings: {
+          ...prev.programSettings,
+          [program]: {
+            ...current,
+            semesterPreferences: {
+              ...(current.semesterPreferences || {}),
+              [semNum]: parseInt(value) || 1,
+            },
+          },
+        },
+      };
+    });
+  };
+
+  const handleSameAsBTechToggle = (checked) => {
+    setFormData(prev => ({
+      ...prev,
+      programSettings: {
+        ...prev.programSettings,
+        'M.Tech': {
+          ...prev.programSettings['M.Tech'],
+          sameAsBTech: checked,
+          ...(checked
+            ? {
+                includedSemesters: [...(prev.programSettings['B.E/B.Tech']?.includedSemesters || [])],
+                semesterPreferences: { ...(prev.programSettings['B.E/B.Tech']?.semesterPreferences || {}) },
+              }
+            : {}),
+        },
+      },
+    }));
+  };
+
+  const validateProgramConfiguration = (data = formData) => {
+    if (data.includedPrograms.length === 0) {
+      return 'Please select at least one program';
+    }
+
+    const effectiveSettings = getEffectiveProgramSettings(data);
+
+    for (const program of data.includedPrograms) {
+      const config = effectiveSettings[program];
+      if (!config?.includedSemesters?.length) {
+        return `Please select Even or Odd semester type for ${program}`;
+      }
+
+      const selectedSems = getSelectedSemesterNumbersForProgram(program, data);
+      if (selectedSems.length === 0) {
+        return `Please select at least one semester number for ${program}`;
+      }
+
+      for (const semNum of selectedSems) {
+        const neededPrefs = Number(config.semesterPreferences?.[semNum]) || 0;
+        const subjectCount = subjects.filter(s =>
+          s.program === program &&
+          s.semesterNumber === semNum &&
+          !s.professionalElective &&
+          !s.projectWork
+        ).length;
+
+        if (subjectCount === 0) {
+          return `No ${program} core subjects found in Sem ${semNum}`;
+        }
+
+        if (neededPrefs > subjectCount) {
+          return `Not enough ${program} core subjects in Sem ${semNum} to cover ${neededPrefs} preferences. Available: ${subjectCount}`;
+        }
+      }
+    }
+
+    return null;
+  };
+
+  const validateAutomaticAllocationConfiguration = (data = formData) => {
+    if (data.allocationMethod !== 'automatic') return null;
+
+    const teacherCount = teachers.length;
+    const subjectCount = subjects.filter(s =>
+      data.includedPrograms.includes(s.program) &&
+      getSelectedSemesterNumbersForProgram(s.program, data).includes(s.semesterNumber)
+    ).length;
+    const maxPerTeacher = parseInt(data.maxSubjectsPerTeacher) || 1;
+    const teachersPerSubject = parseInt(data.teachersPerSubject) || 1;
+    const totalCapacity = teacherCount * maxPerTeacher;
+    const requiredCapacity = subjectCount * teachersPerSubject;
+
+    if (teacherCount === 0) {
+      return 'Add teachers before setting up automatic allocation.';
+    }
+
+    if (subjectCount === 0) {
+      return 'Add subjects for the selected programs and semesters first.';
+    }
+
+    if (totalCapacity < requiredCapacity) {
+      return `Automatic allocation is not feasible. Capacity is ${totalCapacity}, but ${requiredCapacity} assignments are required.`;
+    }
+
+    return null;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -113,40 +404,26 @@ const AdminPreferenceFormPage = () => {
       return;
     }
 
-    if (formData.includedSemesters.length === 0) {
-      toast.error('Please select at least one semester type');
+    const programValidationError = validateProgramConfiguration();
+    if (programValidationError) {
+      toast.error(programValidationError);
       return;
     }
 
-    let availableSems = [];
-    if (formData.includedSemesters.includes('Odd')) availableSems.push(1, 3, 5, 7);
-    if (formData.includedSemesters.includes('Even')) availableSems.push(2, 4, 6, 8);
-    
-    let semsToCheck = Object.keys(formData.semesterPreferences || {})
-      .map(Number)
-      .filter(num => availableSems.includes(num));
-
-    if (semsToCheck.length === 0) {
-      toast.error('Please select at least one specific semester number to include');
+    const allocationValidationError = validateAutomaticAllocationConfiguration();
+    if (allocationValidationError) {
+      toast.error(allocationValidationError);
       return;
-    }
-    for (const semNum of semsToCheck) {
-      const subjectCount = subjects.filter(s => s.semesterNumber === semNum && !s.professionalElective && !s.projectWork).length;
-      const neededPrefs = formData.semesterPreferences?.[semNum] !== undefined ? formData.semesterPreferences[semNum] : (formData.preferencesPerSemester || 0);
-      
-      if (neededPrefs > 0 && subjectCount < neededPrefs) {
-        toast.error(`Not enough core subjects in Sem ${semNum} to cover ${neededPrefs} preferences. Available: ${subjectCount}`);
-        return;
-      }
     }
 
     setIsSubmitting(true);
     try {
+      const payload = buildSubmitPayload();
       if (editingForm) {
-        await api.put(`/preference-forms/${editingForm._id}`, formData);
+        await api.put(`/preference-forms/${editingForm._id}`, payload);
         toast.success('Preference form updated successfully');
       } else {
-        await api.post('/preference-forms', formData);
+        await api.post('/preference-forms', payload);
         toast.success('Preference form created successfully');
       }
       fetchData();
@@ -165,6 +442,13 @@ const AdminPreferenceFormPage = () => {
       description: form.description || '',
       preferencesPerSemester: form.preferencesPerSemester,
       semesterPreferences: form.semesterPreferences || { Even: form.preferencesPerSemester || 3, Odd: form.preferencesPerSemester || 3 },
+      includedPrograms: form.includedPrograms?.length ? form.includedPrograms : ['B.E/B.Tech'],
+      programSettings: programSettingsArrayToState(
+        form.programSettings,
+        form.includedSemesters,
+        form.semesterPreferences,
+        form.preferencesPerSemester || 3
+      ),
       maxSubjectsPerTeacher: form.maxSubjectsPerTeacher || 1,
       teachersPerSubject: form.teachersPerSubject || 1,
       includedSemesters: form.includedSemesters,
@@ -194,7 +478,11 @@ const AdminPreferenceFormPage = () => {
       name: '',
       description: '',
       preferencesPerSemester: 3,
+      semesterPreferences: { Even: 3, Odd: 3 },
+      includedPrograms: ['B.E/B.Tech'],
+      programSettings: createEmptyProgramSettings(),
       maxSubjectsPerTeacher: 1,
+      teachersPerSubject: 1,
       includedSemesters: ['Even', 'Odd'],
       allocationMethod: 'manual',
       startsAt: '',
@@ -231,26 +519,33 @@ const AdminPreferenceFormPage = () => {
       return;
     }
 
-    let availableSems = [];
-    if (selectedFormForSubjects.includedSemesters.includes('Odd')) availableSems.push(1, 3, 5, 7);
-    if (selectedFormForSubjects.includedSemesters.includes('Even')) availableSems.push(2, 4, 6, 8);
+    const formProgramSettings = selectedFormForSubjects.programSettings?.length
+      ? selectedFormForSubjects.programSettings
+      : [{
+          program: 'B.E/B.Tech',
+          includedSemesters: selectedFormForSubjects.includedSemesters || ['Even', 'Odd'],
+          semesterPreferences: selectedFormForSubjects.semesterPreferences || {},
+        }];
 
-    let semsToCheck = Object.keys(selectedFormForSubjects.semesterPreferences || {})
-      .map(Number)
-      .filter(num => availableSems.includes(num));
+    for (const config of formProgramSettings) {
+      const semesterPreferences = config.semesterPreferences || {};
+      for (const [semNum, neededPrefs] of Object.entries(semesterPreferences)) {
+        if (Number(neededPrefs) > 0) {
+          const selectedForSem = selectedSubjectIds.filter(id => {
+            const s = subjects.find(sub => sub._id === id);
+            return (
+              s &&
+              s.program === config.program &&
+              s.semesterNumber === Number(semNum) &&
+              !s.professionalElective &&
+              !s.projectWork
+            );
+          }).length;
 
-    for (const semNum of semsToCheck) {
-      const neededPrefs = selectedFormForSubjects.semesterPreferences?.[semNum] !== undefined ? selectedFormForSubjects.semesterPreferences[semNum] : (selectedFormForSubjects.preferencesPerSemester || 0);
-      
-      if (neededPrefs > 0) {
-        const selectedForSem = selectedSubjectIds.filter(id => {
-          const s = subjects.find(sub => sub._id === id);
-          return s && s.semesterNumber === semNum && !s.professionalElective && !s.projectWork;
-        }).length;
-
-        if (selectedForSem < neededPrefs) {
-          toast.error(`Please select at least ${neededPrefs} core subjects for Sem ${semNum}.`);
-          return;
+          if (selectedForSem < Number(neededPrefs)) {
+            toast.error(`Please select at least ${neededPrefs} ${config.program} core subjects for Sem ${semNum}.`);
+            return;
+          }
         }
       }
     }
@@ -519,6 +814,141 @@ const AdminPreferenceFormPage = () => {
                   </div>
 
                   <div className="space-y-3">
+                    <Label>Programs to Include *</Label>
+                    <div className="flex flex-wrap gap-4">
+                      {PROGRAM_OPTIONS.map(program => (
+                        <label key={program.value} className="flex items-center space-x-2 bg-slate-50 py-2 px-4 rounded-md border border-slate-200 cursor-pointer hover:bg-slate-100">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-600"
+                            checked={formData.includedPrograms.includes(program.value)}
+                            onChange={(e) => handleProgramToggle(program.value, e.target.checked)}
+                          />
+                          <span className="text-sm font-medium">{program.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-5">
+                    {PROGRAM_ORDER.filter(program => formData.includedPrograms.includes(program)).map((program) => {
+                      const programLabel = PROGRAM_OPTIONS.find(option => option.value === program)?.label || program;
+                      const isMTechSameAsBTech =
+                        program === 'M.Tech' &&
+                        formData.includedPrograms.includes('B.E/B.Tech') &&
+                        formData.programSettings['M.Tech']?.sameAsBTech;
+                      const effectiveSettings = getEffectiveProgramSettings();
+                      const config = effectiveSettings[program] || { includedSemesters: [], semesterPreferences: {} };
+                      const availableSems = getSemesterNumbersForTypes(config.includedSemesters || []);
+                      const selectedSems = getSelectedSemesterNumbersForProgram(program);
+
+                      return (
+                        <div key={program} className="bg-slate-50 p-4 rounded-lg border border-slate-100 space-y-4">
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                            <div>
+                              <h3 className="text-base font-semibold text-slate-800">{programLabel} Semester Details</h3>
+                              <p className="text-xs text-muted-foreground">Choose semester type, semester numbers, and preference counts for {programLabel}.</p>
+                            </div>
+                            {program === 'M.Tech' && formData.includedPrograms.includes('B.E/B.Tech') && (
+                              <label className="flex items-center gap-2 text-sm font-medium text-slate-700 bg-white border rounded-md px-3 py-2">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(formData.programSettings['M.Tech']?.sameAsBTech)}
+                                  onChange={(e) => handleSameAsBTechToggle(e.target.checked)}
+                                  className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-600"
+                                />
+                                Same as BTech
+                              </label>
+                            )}
+                          </div>
+
+                          <div className={isMTechSameAsBTech ? 'opacity-60 pointer-events-none space-y-4' : 'space-y-4'}>
+                            <div className="space-y-2">
+                              <Label>{programLabel} Semester Types *</Label>
+                              <div className="flex flex-wrap gap-3">
+                                {['Even', 'Odd'].map(semester => (
+                                  <label key={`${program}-${semester}`} className="flex items-center space-x-2 bg-white py-2 px-4 rounded-md border border-slate-200 cursor-pointer hover:bg-slate-100">
+                                    <input
+                                      type="checkbox"
+                                      className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-600"
+                                      checked={config.includedSemesters?.includes(semester)}
+                                      onChange={(e) => handleProgramSemesterToggle(program, semester, e.target.checked)}
+                                    />
+                                    <span className="text-sm font-medium">{semester} Semesters</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+
+                            {availableSems.length === 0 ? (
+                              <p className="text-sm text-amber-600">Please select a semester type for {programLabel}.</p>
+                            ) : (
+                              <div className="space-y-2">
+                                <Label>Select {programLabel} Semester Numbers *</Label>
+                                <div className="flex flex-wrap gap-2">
+                                  {availableSems.map(num => {
+                                    const isSelected = selectedSems.includes(num);
+                                    return (
+                                      <Button
+                                        key={`${program}-${num}`}
+                                        type="button"
+                                        onClick={() => handleProgramSemesterNumberToggle(program, num)}
+                                        variant={isSelected ? 'default' : 'outline'}
+                                        size="sm"
+                                        className="h-10 w-12 text-base"
+                                      >
+                                        {num}
+                                      </Button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {selectedSems.length > 0 && (
+                              <div className="space-y-3 pt-2">
+                                <Label>{programLabel} Preferences per Semester *</Label>
+                                {selectedSems.map(semNum => (
+                                  <div key={`${program}-${semNum}-prefs`} className="flex items-center gap-3">
+                                    <Label className="w-16 font-medium text-slate-600">Sem {semNum}:</Label>
+                                    <Input
+                                      type="number"
+                                      value={config.semesterPreferences?.[semNum] || ''}
+                                      onChange={(e) => handleProgramPrefChange(program, semNum, e.target.value)}
+                                      min="1"
+                                      max="20"
+                                      required
+                                      className="bg-white flex-1"
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="bg-slate-50 p-4 rounded-lg border border-slate-100">
+                    <div className="space-y-2 max-w-sm">
+                      <Label htmlFor="teachersPerSubject">Teachers per Subject *</Label>
+                      <Input
+                        id="teachersPerSubject"
+                        type="number"
+                        name="teachersPerSubject"
+                        value={formData.teachersPerSubject}
+                        onChange={handleInputChange}
+                        min="1"
+                        max="10"
+                        required
+                        className="bg-white"
+                      />
+                      <p className="text-xs text-muted-foreground">How many teachers are needed for one subject?</p>
+                    </div>
+                  </div>
+
+                  <fieldset className="hidden" disabled>
                     <Label>Semesters to Include *</Label>
                     <div className="flex flex-wrap gap-4">
                       <label className="flex items-center space-x-2 bg-slate-50 py-2 px-4 rounded-md border border-slate-200 cursor-pointer hover:bg-slate-100">
@@ -544,9 +974,9 @@ const AdminPreferenceFormPage = () => {
                         <span className="text-sm font-medium">📅 Odd Semesters</span>
                       </label>
                     </div>
-                  </div>
+                  </fieldset>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 p-4 rounded-lg border border-slate-100">
+                  <fieldset className="hidden" disabled>
                     <div className="space-y-4">
                       {(() => {
                         let availableSems = [];
@@ -633,7 +1063,7 @@ const AdminPreferenceFormPage = () => {
                       />
                       <p className="text-xs text-muted-foreground">How many teachers are needed for one subject?</p>
                     </div>
-                  </div>
+                  </fieldset>
 
                   <div className="space-y-3">
                     <Label>Allocation Method *</Label>
@@ -690,7 +1120,10 @@ const AdminPreferenceFormPage = () => {
                       {/* Feasibility Check Banner */}
                       {(() => {
                         const teacherCount = teachers.length;
-                        const subjectCount = subjects.filter(s => formData.includedSemesters.includes(s.semester)).length;
+                        const subjectCount = subjects.filter(s =>
+                          formData.includedPrograms.includes(s.program) &&
+                          getSelectedSemesterNumbersForProgram(s.program).includes(s.semesterNumber)
+                        ).length;
                         const maxPerTeacher = parseInt(formData.maxSubjectsPerTeacher) || 1;
                         const teachersPerSubject = parseInt(formData.teachersPerSubject) || 1;
                         const totalCapacity = teacherCount * maxPerTeacher;
@@ -714,7 +1147,7 @@ const AdminPreferenceFormPage = () => {
                               <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5 text-amber-500" />
                               <div>
                                 <p className="font-semibold">No subjects found for selected semesters</p>
-                                <p className="text-xs text-amber-600 mt-0.5">Add subjects to {formData.includedSemesters.join(' & ')} semesters first.</p>
+                                <p className="text-xs text-amber-600 mt-0.5">Add subjects for the selected programs and semesters first.</p>
                               </div>
                             </div>
                           );
@@ -808,14 +1241,7 @@ const AdminPreferenceFormPage = () => {
                     <Button 
                       type="submit" 
                       disabled={
-                        isSubmitting || 
-                        formData.includedSemesters.length === 0 ||
-                        (formData.allocationMethod === 'automatic' && (() => {
-                          const teacherCount = teachers.length;
-                          const subjectCount = subjects.filter(s => formData.includedSemesters.includes(s.semester)).length;
-                          const maxPerTeacher = parseInt(formData.maxSubjectsPerTeacher) || 1;
-                          return teacherCount === 0 || (teacherCount * maxPerTeacher) < subjectCount;
-                        })())
+                        isSubmitting
                       } 
                       className="bg-indigo-600 hover:bg-indigo-700 font-medium px-6"
                     >

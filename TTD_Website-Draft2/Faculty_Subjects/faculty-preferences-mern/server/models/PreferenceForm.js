@@ -40,6 +40,30 @@ const preferenceFormSchema = new mongoose.Schema(
       type: [String],
       default: ['B.E/B.Tech', 'M.Tech'],
     },
+    // Program-specific semester and preference count configuration
+    programSettings: [
+      {
+        program: {
+          type: String,
+          enum: ['B.E/B.Tech', 'M.Tech'],
+          required: true,
+        },
+        includedSemesters: {
+          type: [String],
+          enum: ['Even', 'Odd'],
+          default: ['Even', 'Odd'],
+        },
+        semesterPreferences: {
+          type: Map,
+          of: Number,
+          default: {},
+        },
+        sameAsBTech: {
+          type: Boolean,
+          default: false,
+        },
+      },
+    ],
     // Allocation method: 'automatic' or 'manual'
     allocationMethod: {
       type: String,
