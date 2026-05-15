@@ -6,7 +6,8 @@ import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
-import { Search, X, Loader2, Table2 } from 'lucide-react';
+import { Search, X, Loader2, Table2, Download } from 'lucide-react';
+import * as XLSX from 'xlsx';
 const AdminPreferencesPage = () => {
   const [allPreferences, setAllPreferences] = useState([]);
   const [allSubjects, setAllSubjects] = useState([]);
@@ -148,6 +149,31 @@ const AdminPreferencesPage = () => {
     setCustomTopN('');
   };
 
+  const handleExportExcel = () => {
+    if (filteredPreferences.length === 0) {
+      alert('No data to export');
+      return;
+    }
+
+    const exportData = filteredPreferences.map(row => ({
+      Rank: row.rank,
+      'Faculty Name': row.teacherName,
+      'Faculty Email': row.teacherEmail,
+      'Subject Name': row.subjectName,
+      'Subject Code': row.subjectCode,
+      Program: row.program,
+      Semester: `Sem ${row.subjectSemesterNumber || row.subjectSemesterType}`,
+      Type: row.isPE ? `Professional Elective (${row.peGroupName})` : row.isProject ? 'Project Work' : 'Core',
+      'Submission Date': new Date(row.submittedAt).toLocaleDateString()
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Preferences');
+
+    XLSX.writeFile(workbook, 'Faculty_Preferences.xlsx');
+  };
+
   const hasActiveFilters = selectedTeacher !== 'all' || selectedSubject !== 'all' || selectedSemester !== 'all' || topN !== 'all' || customTopN !== '';
 
   if (loading) {
@@ -173,6 +199,9 @@ const AdminPreferencesPage = () => {
             </h1>
             <p className="text-slate-500 mt-1">Filter and analyze faculty subject preferences submissions</p>
           </div>
+          <Button onClick={handleExportExcel} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2 shadow-sm">
+            <Download className="w-4 h-4" /> Export to Excel
+          </Button>
         </div>
 
         {error && <div className="bg-rose-50 text-rose-700 p-4 rounded-lg border border-rose-200">{error}</div>}
