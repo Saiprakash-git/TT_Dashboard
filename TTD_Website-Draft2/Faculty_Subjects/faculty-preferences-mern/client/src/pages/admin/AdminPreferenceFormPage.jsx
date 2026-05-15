@@ -28,6 +28,7 @@ const AdminPreferenceFormPage = () => {
     description: '',
     preferencesPerSemester: 3,
     maxSubjectsPerTeacher: 1,
+    teachersPerSubject: 1,
     includedSemesters: ['Even', 'Odd'],
     allocationMethod: 'manual',
     startsAt: '',
@@ -135,6 +136,7 @@ const AdminPreferenceFormPage = () => {
       description: form.description || '',
       preferencesPerSemester: form.preferencesPerSemester,
       maxSubjectsPerTeacher: form.maxSubjectsPerTeacher || 1,
+      teachersPerSubject: form.teachersPerSubject || 1,
       includedSemesters: form.includedSemesters,
       allocationMethod: form.allocationMethod,
       startsAt: form.startsAt ? form.startsAt.slice(0, 16) : '',
@@ -462,7 +464,7 @@ const AdminPreferenceFormPage = () => {
                     />
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-1 gap-6 bg-slate-50 p-4 rounded-lg border border-slate-100">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 p-4 rounded-lg border border-slate-100">
                     <div className="space-y-2">
                       <Label htmlFor="preferencesPerSemester">Preferences per Semester *</Label>
                       <Input
@@ -477,6 +479,22 @@ const AdminPreferenceFormPage = () => {
                         className="bg-white"
                       />
                       <p className="text-xs text-muted-foreground">E.g., 3 choices for Even, 3 for Odd</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="teachersPerSubject">Teachers per Subject *</Label>
+                      <Input
+                        id="teachersPerSubject"
+                        type="number"
+                        name="teachersPerSubject"
+                        value={formData.teachersPerSubject}
+                        onChange={handleInputChange}
+                        min="1"
+                        max="10"
+                        required
+                        className="bg-white"
+                      />
+                      <p className="text-xs text-muted-foreground">How many teachers are needed for one subject?</p>
                     </div>
                   </div>
 
@@ -537,7 +555,9 @@ const AdminPreferenceFormPage = () => {
                         const teacherCount = teachers.length;
                         const subjectCount = subjects.filter(s => formData.includedSemesters.includes(s.semester)).length;
                         const maxPerTeacher = parseInt(formData.maxSubjectsPerTeacher) || 1;
+                        const teachersPerSubject = parseInt(formData.teachersPerSubject) || 1;
                         const totalCapacity = teacherCount * maxPerTeacher;
+                        const requiredCapacity = subjectCount * teachersPerSubject;
 
                         if (teacherCount === 0) {
                           return (
@@ -563,18 +583,18 @@ const AdminPreferenceFormPage = () => {
                           );
                         }
 
-                        if (totalCapacity < subjectCount) {
-                          const neededPerTeacher = Math.ceil(subjectCount / teacherCount);
+                        if (totalCapacity < requiredCapacity) {
+                          const neededPerTeacher = Math.ceil(requiredCapacity / teacherCount);
                           return (
                             <div className="flex items-start gap-3 p-3 bg-rose-50 border border-rose-200 rounded-lg text-sm text-rose-800">
                               <XCircle className="w-5 h-5 shrink-0 mt-0.5 text-rose-500" />
                               <div>
                                 <p className="font-semibold">Allocation not feasible!</p>
                                 <p className="text-xs text-rose-600 mt-0.5">
-                                  <strong>{teacherCount}</strong> teachers × <strong>{maxPerTeacher}</strong> subjects each = <strong>{totalCapacity}</strong> capacity, but there are <strong>{subjectCount}</strong> subjects.
+                                  <strong>{teacherCount}</strong> teachers × <strong>{maxPerTeacher}</strong> subjects each = <strong>{totalCapacity}</strong> capacity, but you need <strong>{requiredCapacity}</strong> capacity (<strong>{subjectCount}</strong> subjects × <strong>{teachersPerSubject}</strong> teachers/subject).
                                 </p>
                                 <p className="text-xs text-rose-600 mt-1">
-                                  💡 Increase to at least <strong>{neededPerTeacher}</strong> subjects per teacher, or add more teachers.
+                                  💡 Increase to at least <strong>{neededPerTeacher}</strong> subjects per teacher, reduce teachers per subject, or add more teachers.
                                 </p>
                               </div>
                             </div>

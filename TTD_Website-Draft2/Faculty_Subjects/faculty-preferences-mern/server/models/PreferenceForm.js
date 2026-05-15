@@ -41,6 +41,12 @@ const preferenceFormSchema = new mongoose.Schema(
       default: 1,
       min: 1,
     },
+    // Teachers required for each subject
+    teachersPerSubject: {
+      type: Number,
+      default: 1,
+      min: 1,
+    },
     // Status: draft, active, closed
     status: {
       type: String,

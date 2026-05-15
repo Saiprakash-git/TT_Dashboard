@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
+import { Input } from '../../components/ui/input';
 import { Target, ArrowLeft, Bot, UserIcon, Trash2, CheckCircle2, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -17,6 +18,7 @@ const AdminAllocationPage = () => {
   const [formPreferences, setFormPreferences] = useState([]);
   const [autoAllocating, setAutoAllocating] = useState(false);
   const [inlineAllocating, setInlineAllocating] = useState(false);
+  const [teachersCountConfig, setTeachersCountConfig] = useState({});
   const [filters, setFilters] = useState({
     semester: 'All',
     program: 'All',
@@ -50,6 +52,7 @@ const AdminAllocationPage = () => {
   const handleSelectForm = (form) => {
     setSelectedForm(form);
     setFilters({ semester: 'All', program: 'All' });
+    setTeachersCountConfig({}); // Reset config on form select
   };
 
   const getFormSubjects = () => {
@@ -95,19 +98,22 @@ const AdminAllocationPage = () => {
         const preference = pref.preferences.find(pr => pr.subject?._id === subjectId || pr.subject === subjectId);
         return {
           teacher: pref.teacher,
-          preferenceOrder: preference?.preferenceOrder,
+          rank: preference?.rank,
         };
       })
-      .sort((a, b) => a.preferenceOrder - b.preferenceOrder);
+      .sort((a, b) => a.rank - b.rank);
   };
 
-  const isSubjectAllocated = (subjectId) => {
-    return allocations.some(alloc => alloc.subject?._id === subjectId || alloc.subject === subjectId);
+  const getAllocatedTeachers = (subjectId) => {
+    return allocations
+      .filter(a => a.subject?._id === subjectId || a.subject === subjectId)
+      .map(a => ({ allocId: a._id, teacher: a.teacher }));
   };
 
-  const getAllocatedTeacher = (subjectId) => {
-    const alloc = allocations.find(a => a.subject?._id === subjectId || a.subject === subjectId);
-    return alloc?.teacher;
+  const isSubjectAllocatedFully = (subjectId) => {
+    const needed = teachersCountConfig[subjectId] || selectedForm?.teachersPerSubject || 1;
+    const currentCount = getAllocatedTeachers(subjectId).length;
+    return currentCount >= needed;
   };
 
   const handleAutoAllocate = async () => {
@@ -136,15 +142,30 @@ const AdminAllocationPage = () => {
   const handleInlineAllocate = async (subjectId, teacherId) => {
     if (!subjectId || !teacherId) return;
 
+    const prefs = getTeacherPreferences(subjectId);
+    const needed = teachersCountConfig[subjectId] || selectedForm?.teachersPerSubject || 1;
+    
+    if (needed > prefs.length) {
+      toast.error(`Insufficient teachers in preferences. You requested ${needed} but only ${prefs.length} teachers submitted preferences for this subject.`);
+      return;
+    }
+
+    const currentCount = getAllocatedTeachers(subjectId).length;
+    if (currentCount >= needed) {
+      toast.error(`Subject already has ${needed} teachers allocated.`);
+      return;
+    }
+
     setInlineAllocating(true);
     const toastId = toast.loading('Allocating subject...');
     try {
-      await api.post('/allocations/allocate', {
-        allocations: [{ subjectId, teacherId }],
+      await api.post('/allocations/allocate-manual', {
+        subjectId,
+        teacherId,
         academicYear: `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`,
       });
 
-      toast.success('Subject allocated successfully', { id: toastId });
+      toast.success('Teacher allocated successfully', { id: toastId });
       fetchData();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Allocation failed', { id: toastId });
@@ -153,16 +174,14 @@ const AdminAllocationPage = () => {
     }
   };
 
-  const handleDeallocate = async (subjectId) => {
-    if (!window.confirm('Are you sure you want to remove this allocation?')) return;
+  const handleDeallocate = async (allocId) => {
+    if (!window.confirm('Are you sure you want to remove this teacher allocation?')) return;
     
-    // We only have the subjectId, we need to find the allocation ID
-    const alloc = allocations.find(a => a.subject?._id === subjectId || a.subject === subjectId);
-    if (!alloc) return;
+    if (!allocId) return;
 
     const toastId = toast.loading('Removing allocation...');
     try {
-      await api.delete(`/allocations/${alloc._id}`);
+      await api.delete(`/allocations/${allocId}`);
       toast.success('Allocation removed', { id: toastId });
       fetchData();
     } catch (err) {
@@ -389,15 +408,28 @@ const AdminAllocationPage = () => {
                       <tbody className="divide-y divide-slate-100">
                         {getFormSubjects().map(subject => {
                           const prefs = getTeacherPreferences(subject._id);
-                          const allocatedTeacher = getAllocatedTeacher(subject._id);
-                          const isAllocated = isSubjectAllocated(subject._id);
+                          const allocatedTeachers = getAllocatedTeachers(subject._id);
+                          const isAllocatedFully = isSubjectAllocatedFully(subject._id);
+                          const neededTeachers = teachersCountConfig[subject._id] || selectedForm?.teachersPerSubject || 1;
 
                           return (
-                            <tr key={subject._id} className={`hover:bg-slate-50/80 transition-colors ${isAllocated ? 'bg-emerald-50/20' : ''}`}>
+                            <tr key={subject._id} className={`hover:bg-slate-50/80 transition-colors ${isAllocatedFully ? 'bg-emerald-50/20' : ''}`}>
                               <td className="px-6 py-4 font-mono text-slate-500 text-xs font-semibold">{subject.code}</td>
                               <td className="px-6 py-4">
                                 <div className="font-medium text-slate-900">{subject.name}</div>
                                 <div className="text-xs text-slate-500 mt-1">{subject.semester} • {subject.credits} Credits</div>
+                                {selectedForm.allocationMethod === 'manual' && (
+                                  <div className="mt-2 flex items-center gap-2">
+                                    <label className="text-xs text-slate-600 font-medium">No of teachers:</label>
+                                    <Input
+                                      type="number"
+                                      min="1"
+                                      value={neededTeachers}
+                                      onChange={(e) => setTeachersCountConfig({...teachersCountConfig, [subject._id]: parseInt(e.target.value) || 1})}
+                                      className="h-6 w-16 text-xs px-2"
+                                    />
+                                  </div>
+                                )}
                               </td>
                               <td className="px-6 py-4">
                                 <div className="space-y-1.5">
@@ -405,14 +437,14 @@ const AdminAllocationPage = () => {
                                     <span className="text-slate-400 text-xs italic">No faculty preferences submitted yet.</span>
                                   ) : (
                                     prefs.map((pref, idx) => (
-                                      <div key={idx} className={`flex justify-between items-center p-2 rounded-md border ${allocatedTeacher?._id === pref.teacher?._id ? 'bg-emerald-100/50 border-emerald-200' : 'bg-white border-slate-200'} shadow-sm text-xs`}>
+                                      <div key={idx} className={`flex justify-between items-center p-2 rounded-md border ${allocatedTeachers.some(at => at.teacher?._id === pref.teacher?._id) ? 'bg-emerald-100/50 border-emerald-200' : 'bg-white border-slate-200'} shadow-sm text-xs`}>
                                         <div className="flex items-center gap-2 overflow-hidden mr-2">
-                                          <span className="shrink-0 bg-indigo-100 text-indigo-700 font-bold px-1.5 py-0.5 rounded text-[10px]">#{pref.preferenceOrder}</span>
-                                          <span className={`font-medium truncate ${allocatedTeacher?._id === pref.teacher?._id ? 'text-emerald-800' : 'text-slate-700'}`} title={pref.teacher?.fullName}>
+                                          <span className="shrink-0 bg-indigo-100 text-indigo-700 font-bold px-1.5 py-0.5 rounded text-[10px]">Pref {pref.rank}</span>
+                                          <span className={`font-medium truncate ${allocatedTeachers.some(at => at.teacher?._id === pref.teacher?._id) ? 'text-emerald-800' : 'text-slate-700'}`} title={pref.teacher?.fullName}>
                                             {pref.teacher?.fullName || 'Unknown'}
                                           </span>
                                         </div>
-                                        {selectedForm.allocationMethod === 'manual' && !isAllocated && (
+                                        {selectedForm.allocationMethod === 'manual' && !allocatedTeachers.some(at => at.teacher?._id === pref.teacher?._id) && !isAllocatedFully && (
                                           <Button
                                             size="sm"
                                             variant="secondary"
@@ -429,25 +461,34 @@ const AdminAllocationPage = () => {
                                 </div>
                               </td>
                               <td className="px-6 py-4">
-                                {allocatedTeacher ? (
-                                  <div className="flex items-center gap-2">
-                                    <span className="bg-emerald-100 text-emerald-800 rounded-full w-5 h-5 flex items-center justify-center text-[10px] font-bold shrink-0">✓</span>
-                                    <span className="font-medium text-emerald-700 truncate" title={allocatedTeacher.fullName}>{allocatedTeacher.fullName}</span>
+                                {allocatedTeachers.length > 0 ? (
+                                  <div className="space-y-2">
+                                    {allocatedTeachers.map((at, i) => (
+                                      <div key={i} className="flex items-center gap-2">
+                                        <span className="bg-emerald-100 text-emerald-800 rounded-full w-5 h-5 flex items-center justify-center text-[10px] font-bold shrink-0">✓</span>
+                                        <span className="font-medium text-emerald-700 truncate" title={at.teacher?.fullName}>{at.teacher?.fullName}</span>
+                                      </div>
+                                    ))}
                                   </div>
                                 ) : (
                                   <Badge variant="outline" className="text-slate-400 border-dashed border-slate-300 font-normal">Unassigned</Badge>
                                 )}
                               </td>
                               <td className="px-6 py-4 text-center">
-                                {isAllocated && (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => handleDeallocate(subject._id)}
-                                    className="h-8 text-xs bg-white text-rose-600 border-rose-200 hover:bg-rose-50 hover:text-rose-700 mx-auto flex w-full max-w-[100px]"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5 mr-1" /> Revoke
-                                  </Button>
+                                {allocatedTeachers.length > 0 && (
+                                  <div className="space-y-2">
+                                    {allocatedTeachers.map((at, i) => (
+                                      <Button
+                                        key={i}
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => handleDeallocate(at.allocId)}
+                                        className="h-6 text-[10px] px-2 bg-white text-rose-600 border-rose-200 hover:bg-rose-50 hover:text-rose-700 mx-auto flex w-full max-w-[100px]"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5 mr-1" /> Revoke
+                                      </Button>
+                                    ))}
+                                  </div>
                                 )}
                               </td>
                             </tr>

@@ -4,6 +4,7 @@ import {
   getMyAllocations,
   getSubjectsWithPreferences,
   allocateSubjects,
+  allocateManual,
   autoAllocate,
   deleteAllocation,
   removeMultipleAllocations,
@@ -23,6 +24,7 @@ router
   .get(authorize('admin'), getSubjectsWithPreferences);
 
 router.route('/allocate').post(authorize('admin'), allocateSubjects);
+router.route('/allocate-manual').post(authorize('admin'), allocateManual);
 
 router.route('/auto-allocate/:formId').post(authorize('admin'), autoAllocate);
 

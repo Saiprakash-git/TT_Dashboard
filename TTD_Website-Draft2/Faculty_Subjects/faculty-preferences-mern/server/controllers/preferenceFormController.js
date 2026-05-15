@@ -121,6 +121,7 @@ export const createPreferenceForm = async (req, res, next) => {
       includedSemesters: includedSemesters || ['Even', 'Odd'],
       allocationMethod: allocationMethod || 'manual',
       maxSubjectsPerTeacher: maxSubjectsPerTeacher || 1,
+      teachersPerSubject: req.body.teachersPerSubject || 1,
       startsAt,
       endsAt,
       createdBy: req.user._id,
@@ -178,6 +179,7 @@ export const updatePreferenceForm = async (req, res, next) => {
     if (preferencesPerSemester) form.preferencesPerSemester = preferencesPerSemester;
     if (allocationMethod) form.allocationMethod = allocationMethod;
     if (maxSubjectsPerTeacher) form.maxSubjectsPerTeacher = maxSubjectsPerTeacher;
+    if (req.body.teachersPerSubject) form.teachersPerSubject = req.body.teachersPerSubject;
     if (startsAt) form.startsAt = startsAt;
     if (endsAt) form.endsAt = endsAt;
     if (status && ['draft', 'active', 'closed'].includes(status)) form.status = status;

@@ -165,6 +165,46 @@ export const allocateSubjects = async (req, res, next) => {
   }
 };
 
+// @desc    Manually allocate a teacher to a subject (supports multiple teachers per subject)
+// @route   POST /api/allocations/allocate-manual
+// @access  Private/Admin
+export const allocateManual = async (req, res, next) => {
+  try {
+    const { subjectId, teacherId, academicYear } = req.body;
+    const year = academicYear || `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`;
+
+    if (!subjectId || !teacherId) {
+      return res.status(400).json({
+        success: false,
+        message: 'subjectId and teacherId are required',
+      });
+    }
+
+    // Check if THIS specific teacher is already allocated to THIS subject
+    const existing = await Allocation.findOne({ subject: subjectId, teacher: teacherId, academicYear: year });
+    if (existing) {
+      return res.status(409).json({
+        success: false,
+        message: 'This teacher is already allocated to this subject',
+      });
+    }
+
+    const allocation = await Allocation.create({
+      subject: subjectId,
+      teacher: teacherId,
+      allocatedBy: req.user._id,
+      academicYear: year,
+    });
+
+    res.status(201).json({
+      success: true,
+      data: allocation,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // @desc    Automatic allocation based on preferences
 // @route   POST /api/allocations/auto-allocate/:formId
 // @access  Private/Admin
@@ -221,20 +261,22 @@ export const autoAllocate = async (req, res, next) => {
             subjectPreferences.push({
               teacher: pref.teacher,
               subject: p.subject,
-              preferenceOrder: p.preferenceOrder,
+              rank: p.rank,
             });
           }
         });
       });
 
-      // Sort by preference order (1st preference = highest priority)
-      subjectPreferences.sort((a, b) => a.preferenceOrder - b.preferenceOrder);
+      // Sort by rank (1st preference = highest priority)
+      subjectPreferences.sort((a, b) => a.rank - b.rank);
 
-      // Find the best teacher for this subject
-      let allocatedTeacher = null;
+      // Find the best teachers for this subject up to teachersPerSubject
+      let allocatedTeachersList = [];
+      const teachersNeeded = form.teachersPerSubject || 1;
+      const maxSubjects = form.maxSubjectsPerTeacher || 1;
+
       for (const pref of subjectPreferences) {
         const teacherId = pref.teacher._id.toString();
-        const semesterKey = `${subject.semester}-${teacherId}`;
 
         const teacherAllocCount = theoreticalAllocations.filter(alloc => {
           const allocSubject = form.subjects
@@ -245,63 +287,34 @@ export const autoAllocate = async (req, res, next) => {
                  allocSubject && allocSubject.semester === subject.semester;
         }).length;
 
-        // Also check existing allocations in the DB (that won't be modified right now)
-        // For accurate counting, we mainly rely on theoreticalAllocations computed on this pass
-        
-        const maxSubjects = form.maxSubjectsPerTeacher || 1;
-
         if (teacherAllocCount < maxSubjects) {
-          allocatedTeacher = pref.teacher;
-          break;
+          allocatedTeachersList.push(pref.teacher);
+          if (allocatedTeachersList.length === teachersNeeded) {
+            break;
+          }
         }
       }
 
-      // If a teacher was found, allocate
-      if (allocatedTeacher) {
-        theoreticalAllocations.push({
-          subject: subjectId,
-          teacher: allocatedTeacher._id,
-          allocatedBy: req.user._id,
-          academicYear: academicYear || `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`,
+      // If teachers were found, allocate
+      if (allocatedTeachersList.length > 0) {
+        allocatedTeachersList.forEach(allocatedTeacher => {
+          theoreticalAllocations.push({
+            subject: subjectId,
+            teacher: allocatedTeacher._id,
+            allocatedBy: req.user._id,
+            academicYear: academicYear || `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`,
+          });
         });
         allocatedSubjects.add(subjectId.toString());
       }
     }
 
-    const allocationsToCreate = [];
-    const allocationsToUpdate = [];
+    // Simply clear existing and save new allocations to properly handle multiple teachers per subject
+    await Allocation.deleteMany({ subject: { $in: Array.from(allocatedSubjects) } });
 
-    // Compare theoretical allocations against what currently exists
-    for (const theoreticalAlloc of theoreticalAllocations) {
-      const existingAlloc = existingAllocations.find(a => a.subject.toString() === theoreticalAlloc.subject.toString());
-      
-      if (existingAlloc) {
-        // If it exists, check if the calculated best teacher has explicitly changed
-        if (existingAlloc.teacher.toString() !== theoreticalAlloc.teacher.toString()) {
-          allocationsToUpdate.push({
-            _id: existingAlloc._id,
-            teacher: theoreticalAlloc.teacher,
-            allocatedBy: theoreticalAlloc.allocatedBy
-          });
-        }
-      } else {
-        // Does not exist, create fresh
-        allocationsToCreate.push(theoreticalAlloc);
-      }
-    }
-
-    // Save creations
     let savedAllocations = [];
-    if (allocationsToCreate.length > 0) {
-      savedAllocations = await Allocation.insertMany(allocationsToCreate);
-    }
-
-    // Save updates
-    for (const update of allocationsToUpdate) {
-      await Allocation.findByIdAndUpdate(update._id, {
-        teacher: update.teacher,
-        allocatedBy: update.allocatedBy
-      });
+    if (theoreticalAllocations.length > 0) {
+      savedAllocations = await Allocation.insertMany(theoreticalAllocations);
     }
 
     // Update preference form with all allocations regarding these subjects
@@ -317,7 +330,7 @@ export const autoAllocate = async (req, res, next) => {
 
     res.status(201).json({
       success: true,
-      message: `Allocation processing completed. ${allocationsToCreate.length} new assigned, ${allocationsToUpdate.length} updated.`,
+      message: `Allocation processing completed. ${theoreticalAllocations.length} total assignments created.`,
       allocatedCount: allFormAllocations.length,
       data: result,
     });
