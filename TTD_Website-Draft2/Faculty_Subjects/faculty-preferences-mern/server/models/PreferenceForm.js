@@ -58,6 +58,15 @@ const preferenceFormSchema = new mongoose.Schema(
           of: Number,
           default: {},
         },
+        preferenceMode: {
+          type: String,
+          enum: ['semwise', 'overall'],
+          default: 'semwise',
+        },
+        overallPreferences: {
+          type: Number,
+          default: null,
+        },
         sameAsBTech: {
           type: Boolean,
           default: false,

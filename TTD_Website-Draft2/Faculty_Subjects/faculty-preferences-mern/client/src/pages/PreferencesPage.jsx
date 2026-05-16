@@ -63,10 +63,23 @@ export default function PreferencesPage() {
     return form?.programSettings?.find(config => config.program === program) || null;
   };
 
+  const isOverallProgram = (program, form = activeForm) => {
+    return getProgramConfigFromForm(form, program)?.preferenceMode === 'overall';
+  };
+
+  const getOverallProgramSubjects = (program) => {
+    return formSubjects.filter(subject => subject.program === program);
+  };
+
   const getSlotsForSubjectInForm = (form, subject) => {
     if (!form || !subject) return form?.preferencesPerSemester || 0;
-    const num = subject.semesterNumber?.toString();
     const programConfig = getProgramConfigFromForm(form, subject.program);
+
+    if (programConfig?.preferenceMode === 'overall') {
+      return programConfig?.overallPreferences || 0;
+    }
+
+    const num = subject.semesterNumber?.toString();
 
     if (programConfig?.semesterPreferences && num && programConfig.semesterPreferences[num] !== undefined) {
       return programConfig.semesterPreferences[num];
@@ -98,7 +111,9 @@ export default function PreferencesPage() {
         
         if (subjectObj) {
           let key;
-          if (subjectObj.projectWork) {
+          if (isOverallProgram(subjectObj.program, form)) {
+            key = `Overall|${subjectObj.program}`;
+          } else if (subjectObj.projectWork) {
             // Project work: single flat key
             key = 'ProjectWork';
           } else if (subjectObj.professionalElective) {
@@ -137,7 +152,7 @@ export default function PreferencesPage() {
   const getPrograms = () => {
     const programs = new Set();
     formSubjects.forEach((s) => {
-      if (!s.professionalElective && !s.projectWork) {
+      if (!s.professionalElective && !s.projectWork && !isOverallProgram(s.program)) {
         programs.add(s.program);
       }
     });
@@ -178,9 +193,14 @@ export default function PreferencesPage() {
       subject = formSubjects.find(s => s.program === program && (s.semesterNumber ? `Sem ${s.semesterNumber}` : 'Uncategorized') === semesterNumKey && s.professionalElective !== true && s.projectWork !== true);
     }
     
+    // Check if this program is in overall mode
+    const programConfig = getProgramConfigFromForm(activeForm, program);
+    if (programConfig?.preferenceMode === 'overall') {
+      return programConfig?.overallPreferences || 0;
+    }
+    
     if (subject && subject.semesterNumber !== undefined) {
       const num = subject.semesterNumber.toString();
-      const programConfig = getProgramConfigFromForm(activeForm, subject.program);
       if (programConfig?.semesterPreferences && programConfig.semesterPreferences[num] !== undefined) {
         return programConfig.semesterPreferences[num];
       }
@@ -195,9 +215,13 @@ export default function PreferencesPage() {
   const filterAvailable = (program, semesterNumKey, prefs, currentIndex, peGroupName, isProjectWork) => {
     const selected = prefs.filter((id, i) => i !== currentIndex && id);
     return formSubjects.filter((s) => {
+      if (program && isOverallProgram(program)) {
+        return s.program === program && !selected.includes(s._id);
+      }
+
       // Project Work filtering — all project subjects across all semesters
       if (isProjectWork) {
-        return s.projectWork === true && !selected.includes(s._id);
+        return s.projectWork === true && !isOverallProgram(s.program) && !selected.includes(s._id);
       }
       
       // PE group filtering
@@ -205,6 +229,7 @@ export default function PreferencesPage() {
         const sNumKey = s.semesterNumber ? `Sem ${s.semesterNumber}` : 'Uncategorized';
         return s.professionalElective === true && 
                (s.peGroupName || 'Ungrouped') === peGroupName &&
+               !isOverallProgram(s.program) &&
                (!program || s.program === program) &&
                (!semesterNumKey || sNumKey === semesterNumKey) &&
                !selected.includes(s._id);
@@ -231,6 +256,20 @@ export default function PreferencesPage() {
     // Build a list of all expected preference groups and check each slot is filled
     const incompleteGroups = [];
 
+    (activeForm?.includedPrograms || []).forEach((program) => {
+      if (!isOverallProgram(program)) return;
+      const programConfig = getProgramConfigFromForm(activeForm, program);
+      const requiredPrefs = programConfig?.overallPreferences || 5;
+      const key = `Overall|${program}`;
+      const prefs = preferences[key] || [];
+      for (let i = 0; i < requiredPrefs; i++) {
+        if (!prefs[i]) {
+          incompleteGroups.push(program);
+          break;
+        }
+      }
+    });
+
     // 1. Check core subject groups
     programs.forEach((program) => {
       const semesterNumKeys = getSemesterNumbersForProgram(program);
@@ -248,7 +287,7 @@ export default function PreferencesPage() {
     });
 
     // 2. Check PE groups
-    const peSubjects = formSubjects.filter(s => s.professionalElective === true);
+    const peSubjects = formSubjects.filter(s => s.professionalElective === true && !isOverallProgram(s.program));
     if (peSubjects.length > 0) {
       const semGroupMap = {};
       peSubjects.forEach(s => {
@@ -276,7 +315,7 @@ export default function PreferencesPage() {
     }
 
     // 3. Check Project Work
-    const projectSubjects = formSubjects.filter(s => s.projectWork === true);
+    const projectSubjects = formSubjects.filter(s => s.projectWork === true && !isOverallProgram(s.program));
     if (projectSubjects.length > 0) {
       const pwPrefs = preferences['ProjectWork'] || [];
       const slotsNeeded = getSlotsNeeded(null, null, null, true);
@@ -304,6 +343,11 @@ export default function PreferencesPage() {
       if (key === 'ProjectWork') {
         program = 'Project Work';
         semesterNumKey = 'ProjectWork';
+        peGroupName = '';
+      } else if (key.startsWith('Overall|')) {
+        const parts = key.split('|');
+        program = parts[1];
+        semesterNumKey = 'Overall';
         peGroupName = '';
       } else if (key.startsWith('PE|')) {
         const parts = key.split('|');
@@ -544,6 +588,59 @@ export default function PreferencesPage() {
           </Card>
         ) : (
           <div className="grid gap-6 md:grid-cols-2">
+            {(activeForm?.includedPrograms || []).filter(program => isOverallProgram(program)).map(program => {
+              const subjects = getOverallProgramSubjects(program);
+              if (subjects.length === 0) return null;
+
+              const key = `Overall|${program}`;
+              const programConfig = getProgramConfigFromForm(activeForm, program);
+              const slotsNeeded = programConfig?.overallPreferences || 0;
+              const prefs = preferences[key] || Array(slotsNeeded).fill('');
+
+              return (
+                <Card key={key} className="md:col-span-2 border-indigo-200 shadow-sm overflow-hidden">
+                  <div className="bg-indigo-50 px-5 py-4 border-b border-indigo-100 flex justify-between items-center">
+                    <CardTitle className="text-base font-semibold text-indigo-800">
+                      {program} Overall Preferences
+                    </CardTitle>
+                    <Badge variant="outline" className="text-indigo-600 border-indigo-300 text-xs">
+                      {subjects.length} subjects
+                    </Badge>
+                  </div>
+                  <CardContent className="p-5 space-y-4">
+                    {Array.from({ length: slotsNeeded }).map((_, idx) => (
+                      <div key={`${key}-${idx}`} className="space-y-1.5">
+                        <label className="text-sm font-medium text-slate-600 flex items-center">
+                          <span className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold mr-2 border border-indigo-200">
+                            {idx + 1}
+                          </span>
+                          {idx === 0 ? 'Top Preference' : idx === 1 ? '2nd Choice' : idx === 2 ? '3rd Choice' : `${idx + 1}th Choice`}
+                        </label>
+                        <select
+                          className="w-full border-slate-200 rounded-md px-3 py-2.5 text-sm bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 shadow-sm disabled:bg-slate-50 disabled:text-slate-500 transition-colors"
+                          value={prefs[idx] || ''}
+                          onChange={(e) => {
+                            const next = [...prefs];
+                            next[idx] = e.target.value;
+                            setPreferences({ ...preferences, [key]: next });
+                          }}
+                          disabled={disableEditing}
+                        >
+                          <option value="">-- Select a Subject --</option>
+                          {filterAvailable(program, null, prefs, idx).map((subject) => (
+                            <option key={subject._id} value={subject._id}>
+                              {subject.code ? `${subject.code} - ` : ''}{subject.name}
+                              {subject.semesterNumber ? ` (Sem ${subject.semesterNumber})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              );
+            })}
+
             {programs.map((program) => {
               const semesterNumKeys = getSemesterNumbersForProgram(program);
               
@@ -595,7 +692,7 @@ export default function PreferencesPage() {
 
             {/* Professional Electives Block - grouped by semester then by PE group */}
             {(() => {
-              const peSubjects = formSubjects.filter(s => s.professionalElective === true);
+              const peSubjects = formSubjects.filter(s => s.professionalElective === true && !isOverallProgram(s.program));
               if (peSubjects.length === 0) return null;
 
               // Group PE subjects by semester number, then by PE group name
@@ -705,7 +802,7 @@ export default function PreferencesPage() {
 
             {/* Project Work Block — single flat list of all project subjects */}
             {(() => {
-              const projectSubjects = formSubjects.filter(s => s.projectWork === true);
+              const projectSubjects = formSubjects.filter(s => s.projectWork === true && !isOverallProgram(s.program));
               if (projectSubjects.length === 0) return null;
 
               const slotsNeeded = getSlotsNeeded(null, null, null, true);

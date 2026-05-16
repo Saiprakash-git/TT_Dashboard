@@ -47,8 +47,13 @@ const normalizeProgramSettings = (body = {}) => {
 
   for (const program of includedPrograms) {
     const rawEntry = toPlainObject(getSettingsEntry(rawSettings, program)) || {};
+    const preferenceMode =
+      program === 'M.Tech' && rawEntry.preferenceMode === 'overall'
+        ? 'overall'
+        : 'semwise';
     const shouldCopyBTech =
       program === 'M.Tech' &&
+      preferenceMode === 'semwise' &&
       rawEntry.sameAsBTech === true &&
       includedPrograms.includes('B.E/B.Tech') &&
       normalizedByProgram['B.E/B.Tech'];
@@ -58,7 +63,21 @@ const normalizeProgramSettings = (body = {}) => {
         program,
         includedSemesters: [...normalizedByProgram['B.E/B.Tech'].includedSemesters],
         semesterPreferences: { ...normalizedByProgram['B.E/B.Tech'].semesterPreferences },
+        preferenceMode: 'semwise',
         sameAsBTech: true,
+      };
+      continue;
+    }
+
+    if (preferenceMode === 'overall') {
+      const overallPreferences = Number(rawEntry.overallPreferences) || null;
+      normalizedByProgram[program] = {
+        program,
+        includedSemesters: ['Even', 'Odd'],
+        semesterPreferences: {},
+        preferenceMode,
+        sameAsBTech: false,
+        overallPreferences,
       };
       continue;
     }
@@ -101,6 +120,7 @@ const normalizeProgramSettings = (body = {}) => {
       program,
       includedSemesters,
       semesterPreferences,
+      preferenceMode,
       sameAsBTech: false,
     };
   }
@@ -119,6 +139,18 @@ const normalizeProgramSettings = (body = {}) => {
 
 const validateProgramSubjectAvailability = async (programSettings) => {
   for (const entry of programSettings) {
+    if (entry.preferenceMode === 'overall') {
+      const subjectCount = await Subject.countDocuments({
+        program: entry.program,
+      });
+
+      if (subjectCount === 0) {
+        return `No ${entry.program} subjects found`;
+      }
+
+      continue;
+    }
+
     const semesterPreferences = toPlainObject(entry.semesterPreferences);
     for (const [semesterNumber, preferenceCount] of Object.entries(semesterPreferences || {})) {
       const subjectCount = await Subject.countDocuments({
@@ -145,6 +177,14 @@ const validateSelectedSubjectsForProgramSettings = async (subjectIds, programSet
   const selectedSubjects = await Subject.find({ _id: { $in: subjectIds } }).lean();
 
   for (const entry of programSettings) {
+    if (entry.preferenceMode === 'overall') {
+      const selectedCount = selectedSubjects.filter((subject) => subject.program === entry.program).length;
+      if (selectedCount === 0) {
+        return `Please select at least one ${entry.program} subject.`;
+      }
+      continue;
+    }
+
     const semesterPreferences = toPlainObject(entry.semesterPreferences);
     for (const [semesterNumber, preferenceCount] of Object.entries(semesterPreferences || {})) {
       const selectedCount = selectedSubjects.filter(
@@ -560,6 +600,54 @@ export const markTeacherSubmitted = async (req, res, next) => {
         success: false,
         message: 'Preference form not found',
       });
+    }
+
+    // Validate teacher's preferences against form requirements
+    const teacherPreference = await Preference.findOne({ teacher: teacherId })
+      .populate('preferences.subject', 'semester semesterNumber program');
+
+    if (!teacherPreference || !teacherPreference.preferences) {
+      return res.status(400).json({
+        success: false,
+        message: 'No preferences found for this teacher',
+      });
+    }
+
+    // Feature 1: Validate MTech Overall preference count
+    for (const programSetting of form.programSettings || []) {
+      if (programSetting.preferenceMode === 'overall' && programSetting.overallPreferences) {
+        const programPrefs = teacherPreference.preferences.filter(
+          p => p.program === programSetting.program
+        );
+        
+        if (programPrefs.length !== programSetting.overallPreferences) {
+          return res.status(400).json({
+            success: false,
+            message: `${programSetting.program} Overall mode requires exactly ${programSetting.overallPreferences} preferences. Submitted: ${programPrefs.length}`,
+          });
+        }
+      }
+    }
+
+    // Feature 2: Validate semester restrictions
+    const includedSemesters = form.includedSemesters || [];
+    if (includedSemesters.length > 0) {
+      const formSubjectIds = form.subjects?.flatMap(s => s.subjectIds) || [];
+      
+      for (const pref of teacherPreference.preferences) {
+        const subjectId = typeof pref.subject === 'object' ? pref.subject._id : pref.subject;
+        
+        // Only validate subjects that are in this form
+        if (formSubjectIds.includes(subjectId)) {
+          const subject = await Subject.findById(subjectId);
+          if (subject && subject.semester && !includedSemesters.includes(subject.semester)) {
+            return res.status(400).json({
+              success: false,
+              message: `Subject ${subject.name} belongs to ${subject.semester} semester, which is not included in this form`,
+            });
+          }
+        }
+      }
     }
 
     // Add teacher to submitted list if not already there
